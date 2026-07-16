@@ -77,3 +77,7 @@ flowchart LR
 ### 질문4
 - **Q.** `fun main(args: Array<String>) { runApplication<BackApplication>(*args) }` 구체적으로 설명
 - **A.** `runApplication`은 `inline fun <reified T : Any> runApplication(vararg args: String)` 형태의 Spring Boot 코틀린 확장 함수. `reified` 덕분에 타입 소거 없이 런타임에도 `T::class.java`를 알 수 있어 `<BackApplication>`처럼 타입을 직접 넘길 수 있음. `args`는 `Array<String>`인데 `runApplication`은 `vararg`를 받으므로 `*`(스프레드 연산자)로 배열을 풀어서 전달해야 함. 내부적으로 `SpringApplication.run(BackApplication::class.java, *args)`와 동일하게 동작.
+
+### 질문5
+- **Q.** 자바 파일은 원본 그대로 두되 실제 컴파일 대상에서는 제외하고, 코틀린 파일만 실제로 빌드되게 설정하는 부분은 어떻게 한 것인가?
+- **A.** Gradle의 `sourceSets.main.java`는 기본적으로 `src/main/java/**/*.java` 전부를 컴파일 대상으로 포함하는데, `exclude("com/back/BackApplication.java")`로 이 경로 패턴에 매칭되는 파일만 그 목록에서 제외했다. 파일은 디스크에 그대로 있고 IDE에서 열람/비교는 가능하지만 `compileJava` 태스크가 이 파일을 건드리지 않으므로 `.class`로 컴파일되지 않는다. 반대로 `sourceSets.main.kotlin`은 기본적으로 `src/main/kotlin`뿐 아니라 `src/main/java` 밑의 `.kt` 파일도 포함하므로 `BackApplication.kt`는 정상적으로 컴파일 대상에 들어간다. 결과적으로 `com.back.BackApplication` 클래스는 코틀린 버전만 실제로 만들어져 중복 클래스 충돌이 없다. 57강에서 자바 폴더를 정리할 때 이 `exclude` 줄만 지우면 된다.
