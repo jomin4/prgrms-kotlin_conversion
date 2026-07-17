@@ -17,16 +17,6 @@ java {
     }
 }
 
-// 학습 비교용으로 남겨둔 "변환 전" 자바 원본 파일은 실제 빌드에서 제외한다.
-// (같은 패키지에 코틀린 버전과 클래스 이름이 겹치므로 컴파일 대상에서 빠져야 함)
-sourceSets {
-    main {
-        java {
-            exclude("com/back/BackApplication.java")
-        }
-    }
-}
-
 // Kotlin 2.2.20은 아직 JVM_25 타겟을 지원하지 않아 compileJava(25)와 compileKotlin(24)가
 // 어긋난다. 둘 다 24로 맞춰서 "Inconsistent JVM Target" 오류를 없앤다.
 tasks.withType<JavaCompile> {

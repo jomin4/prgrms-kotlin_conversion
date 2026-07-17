@@ -28,12 +28,19 @@ fun main(args: Array<String>) {
 
 주요 변경점: `public class` → 기본 public 생략, static `main` 메서드 → 클래스 밖 top-level `fun main`, `SpringApplication.run(Class, args)` → `runApplication<T>(*args)` (reified 제네릭 + 스프레드 연산자).
 
-### 최종 파일 배치 (자바/코틀린 비교를 위해 둘 다 유지)
+### 최종 파일 배치 (수정 이력 있음 — 아래 "이후 수정" 참고)
 
-- `back/src/main/java/com/back/BackApplication.java` — 원본 자바, **비교용으로 남기되 실제 빌드에서는 제외**
 - `back/src/main/kotlin/com/back/BackApplication.kt` — 실제로 빌드되는 코틀린 버전
 
-같은 패키지(`com.back`)에 같은 클래스명(`BackApplication`)이 둘 있으면 중복 클래스 오류가 나므로, `build.gradle.kts`의 `sourceSets { main { java { exclude(...) } } }`로 자바 원본 파일을 컴파일 대상에서만 제외했다. 57강에서 소스 폴더를 java → kotlin으로 정식 이관하기 전까지, 이 프로젝트는 "자바 원본은 참고용으로 계속 남겨두고 코틀린 버전만 빌드되는" 방식으로 진행한다.
+### 이후 수정 (9강 진행 중 소급 적용)
+
+원래는 자바 원본(`BackApplication.java`)을 비교용으로 남기고 `build.gradle.kts`의 `sourceSets { main { java { exclude(...) } } }`로 빌드에서만 제외하는 방식을 썼다. 하지만 9강부터 도메인 클래스 60여 개를 변환하면서 파일마다 `exclude` 줄을 추가하는 건 관리 부담이 크다고 판단, **자바 원본을 삭제하고 같은 자리에 `.kt`로 대체하는 방식(실제 강사의 커밋과 동일)** 으로 통일하기로 했다. 이에 따라 6강도 소급 적용:
+
+- `back/src/main/java/com/back/BackApplication.java` 삭제
+- `build.gradle.kts`의 `sourceSets { main { java { exclude(...) } } }` 블록 제거
+- (자바 원본이 어떤 모습이었는지는 git 히스토리의 이 커밋 이전 버전에서 언제든 확인 가능)
+
+이제부터(9강~) 모든 도메인 클래스 변환은 "자바 파일 삭제 → 같은 경로에 `.kt` 생성"으로 진행한다.
 
 ### 트러블슈팅: Kotlin/Java JVM 타겟 불일치
 
@@ -47,13 +54,7 @@ fun main(args: Array<String>) {
 
 ```mermaid
 flowchart LR
-    subgraph "back/src/main/java/com/back"
-        J["BackApplication.java\n(원본, 빌드 제외)"]
-    end
-    subgraph "back/src/main/kotlin/com/back"
-        K["BackApplication.kt\n(실제 빌드 대상)"]
-    end
-    G["build.gradle.kts\nsourceSets exclude"] -.제외.-> J
+    J["BackApplication.java\n(원본, 9강 진행 중 삭제됨)"] -- "삭제 후 대체" --> K["back/src/main/kotlin/com/back/BackApplication.kt\n(실제 빌드 대상)"]
 ```
 
 ## 질문 로그
