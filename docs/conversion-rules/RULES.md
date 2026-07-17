@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **6강까지**
+- 현재 커버리지: **7강까지**
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -18,6 +18,7 @@
 | [R-001](#r-001-gradle-빌드에-kotlin-jvm-플러그인-추가) | Gradle 빌드에 Kotlin JVM 플러그인 추가 | build-config | 6강 |
 | [R-002](#r-002-javakotlin-컴파일-jvm-타겟-정합성-맞추기) | Java/Kotlin 컴파일 JVM 타겟 정합성 맞추기 | build-config | 6강 |
 | [R-003](#r-003-애플리케이션-진입점-main-변환) | 애플리케이션 진입점(`main`) 변환 | entrypoint | 6강 |
+| [R-004](#r-004-spring-빈-클래스는-open이어야-함--kotlinplugin.spring) | Spring 빈 클래스는 `open`이어야 함 → `kotlin("plugin.spring")` | build-config | 7강 |
 
 ---
 
@@ -144,6 +145,35 @@ fun main(args: Array<String>) {
 
 - import 경로가 자바와 다름: `org.springframework.boot.runApplication` (Spring Boot Kotlin 확장 함수)를 새로 import해야 함
 - 파일/클래스명은 자바와 동일하게 유지 (`BackApplication`)
+
+---
+
+## R-004: Spring 빈 클래스는 `open`이어야 함 → `kotlin("plugin.spring")`
+
+- **카테고리**: build-config
+- **도입 강**: [7강](../learning-log/step-07.md)
+- **적용 조건**: `@Component`, `@Service`, `@Repository`, `@Configuration`(및 이를 포함하는 `@SpringBootApplication`, `@RestController` 등)이 붙은 클래스를 코틀린으로 옮길 때
+
+### 문제 상황
+
+코틀린 클래스는 기본이 `final`이다. Spring은 `@Transactional`, `@Async`, `@Cacheable`, `@Configuration` 등을 구현할 때 런타임에 원 클래스를 상속한 CGLIB 프록시를 만들어 빈으로 등록하는 방식을 쓰는데, `final` 클래스는 상속이 불가능해 프록시 생성이 막힌다.
+
+### 해결 패턴
+
+```kotlin
+// build.gradle.kts
+plugins {
+    kotlin("jvm") version "2.2.20"
+    kotlin("plugin.spring") version "2.2.20"   // 추가
+}
+```
+
+`kotlin("plugin.spring")`을 추가하면 `@Component`/`@Service`/`@Repository`/`@Configuration` 등이 붙은 클래스를 컴파일 시점에 **자동으로 open 처리**해준다. 클래스마다 수동으로 `open class ...`를 붙일 필요가 없다.
+
+### 주의사항
+
+- 이 플러그인이 없을 때 임시방편으로 클래스에 직접 `open` 키워드를 붙여서 해결할 수도 있지만, 스프링 빈 클래스가 많아질수록 실수하기 쉬우므로 플러그인 적용이 정석이다.
+- Kotlin JVM 플러그인(R-001)이 먼저 적용되어 있어야 `kotlin("plugin.spring")`도 의미가 있다 (같은 Kotlin 버전으로 맞출 것).
 
 ---
 
