@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **9강까지**
+- 현재 커버리지: **10강까지**
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -26,6 +26,8 @@
 | [R-009](#r-009-자바-게터-메서드--코틀린-프로퍼티-접근) | 자바 게터 메서드 → 코틀린 프로퍼티 접근 | language-idiom | 9강 |
 | [R-010](#r-010-문자열-포맷--멀티라인-문자열) | 문자열 포맷 & 멀티라인 문자열 | language-idiom | 9강 |
 | [R-011](#r-011-java-stream--kotlin-컬렉션-함수) | Java Stream → Kotlin 컬렉션 함수 | language-idiom | 9강 |
+| [R-012](#r-012-롬복-getter를-코틀린이-인식하지-못하는-문제) | 롬복 `@Getter`를 코틀린이 인식하지 못하는 문제 | interop | 10강 |
+| [R-013](#r-013-java-record--kotlin-data-class) | Java `record` → Kotlin `data class` | entity-dto | 10강 |
 
 ---
 
@@ -369,6 +371,78 @@ kotlin {
 ### 주의사항
 
 - 이건 "패턴 매칭표"에 가깝다 — 모든 `Collectors.xxx`에 1:1 대응 코틀린 함수가 있는 건 아니므로, 다른 Stream 연산을 변환할 때는 그때그때 대응되는 코틀린 컬렉션 함수(`map`, `filter`, `groupBy`, `associateBy` 등)를 찾아 적용해야 한다.
+
+---
+
+## R-012: 롬복 `@Getter`를 코틀린이 인식하지 못하는 문제
+
+- **카테고리**: interop (자바-코틀린 상호운용)
+- **도입 강**: [10강](../learning-log/step-10.md)
+- **적용 조건**: 코틀린 코드(DTO 등)가 Lombok `@Getter`/`@Setter`가 붙은 **자바** 클래스의 필드에 프로퍼티 스타일(`.field`)로 접근할 때
+
+### 문제 상황
+
+`compileKotlin`은 Java 소스를 어노테이션 프로세싱(Lombok 처리) 이전 상태로 직접 분석한다. Lombok이 게터/세터를 생성하는 시점은 `compileJava` 단계인데, Kotlin 컴파일은 그보다 먼저 원본 자바 소스만 보고 끝나기 때문에 Lombok이 만들 예정인 메서드를 "존재하지 않는 메서드"로 인식해 `unresolved reference` 컴파일 에러가 난다.
+
+### 해결 패턴
+
+```diff
+ @Entity
+-@Getter
+ @NoArgsConstructor
+ public class SomeEntity {
+     private String content;
+
++    public String getContent() {
++        return content;
++    }
+ }
+```
+
+`@Getter`/`@Setter` 어노테이션을 제거하고, 코틀린에서 참조가 필요한 필드에 한해 게터(및 필요시 세터)를 **직접 자바 코드로 구현**한다.
+
+### 주의사항
+
+- 클래스의 모든 필드가 아니라, **코틀린 쪽에서 실제로 참조하는 필드**만 우선 게터를 추가하면 된다 (한 번에 전체를 다 손댈 필요 없음 — 이 프로젝트에서도 DTO가 필요로 하는 필드부터 순서대로 처리).
+- 최종적으로 해당 클래스 전체를 코틀린으로 변환하면 이 문제 자체가 사라진다 (코틀린 프로퍼티는 게터/세터를 컴파일러가 자동 생성하고, 같은 코틀린 컴파일 유닛 안에서는 순서 문제가 없음). 이 규칙은 "자바 클래스를 아직 코틀린으로 옮기기 전, 과도기"에 필요한 임시 조치다.
+- Lombok 자체를 제거하는 것(48강)과는 별개다 — 이 시점에는 아직 Lombok을 쓰되, 코틀린이 참조할 특정 필드에 한해 게터를 수동으로 병행 작성하는 것.
+
+---
+
+## R-013: Java `record` → Kotlin `data class`
+
+- **카테고리**: entity-dto
+- **도입 강**: [10강](../learning-log/step-10.md)
+- **적용 조건**: 불변 값 객체(주로 DTO)가 자바 `record`로 되어 있을 때
+
+### 변환
+
+```diff
+-public record PostCommentDto(
+-        int id,
+-        String content
+-) {
+-    public PostCommentDto(PostComment postComment) {
+-        this(postComment.getId(), postComment.getContent());
+-    }
+-}
++data class PostCommentDto(
++    val id: Int,
++    val content: String
++) {
++    constructor(postComment: PostComment) : this(
++        id = postComment.id,
++        content = postComment.content
++    )
++}
+```
+
+자바 `record`가 제공하는 것(불변 필드, 자동 `equals`/`hashCode`/`toString`, 컴팩트 생성자)은 코틀린 `data class`가 그대로 대응한다. record의 커스텀 보조 생성자(엔티티를 받아 필드를 채우는 생성자)는 코틀린의 **보조 생성자**(`constructor(...) : this(...)`) 문법으로 옮긴다.
+
+### 주의사항
+
+- record의 컴포넌트 접근자는 `id()`처럼 **괄호 있는 메서드** 형태지만, `data class`의 프로퍼티는 `.id`로 **괄호 없이** 접근한다 — 자바 쪽에서 이 DTO를 호출하는 코드가 있다면 `dto.id()`가 아니라 코틀린이 생성한 JavaBean 스타일 게터 `dto.getId()`를 쓰게 된다(자바에서 호출 시).
+- 필드가 전부 불변(`val`)이고 상속을 쓰지 않는 단순 값 객체일 때만 적용한다. 상속이 필요하면 일반 `class`를 유지한다 (13강에서 이 트레이드오프를 다룸).
 
 ---
 
