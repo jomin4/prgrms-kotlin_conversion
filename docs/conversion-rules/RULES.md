@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **8강까지**
+- 현재 커버리지: **9강까지**
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -22,6 +22,10 @@
 | [R-005](#r-005-jpa-엔티티-open-문제--kotlinplugin.jpa--allopen) | JPA 엔티티 `open` 문제 → `kotlin("plugin.jpa")` + `allOpen` | build-config | 8강 |
 | [R-006](#r-006-jackson이-코틀린-클래스를-직렬화역직렬화하도록-지원) | Jackson이 코틀린 클래스를 직렬화/역직렬화하도록 지원 | build-config | 8강 |
 | [R-007](#r-007-코틀린-컴파일러-옵션-null-안정성--어노테이션-타겟) | 코틀린 컴파일러 옵션 (null 안정성 / 어노테이션 타겟) | build-config | 8강 |
+| [R-008](#r-008-체크-예외-처리-어노테이션-제거) | 체크 예외 처리 어노테이션 제거 | language-idiom | 9강 |
+| [R-009](#r-009-자바-게터-메서드--코틀린-프로퍼티-접근) | 자바 게터 메서드 → 코틀린 프로퍼티 접근 | language-idiom | 9강 |
+| [R-010](#r-010-문자열-포맷--멀티라인-문자열) | 문자열 포맷 & 멀티라인 문자열 | language-idiom | 9강 |
+| [R-011](#r-011-java-stream--kotlin-컬렉션-함수) | Java Stream → Kotlin 컬렉션 함수 | language-idiom | 9강 |
 
 ---
 
@@ -262,6 +266,109 @@ kotlin {
 ### 주의사항
 
 - 프로젝트에 이미 다른 `kotlin { compilerOptions { ... } }` 블록이 있다면(예: JVM 타겟 설정, R-002) **새 블록을 또 만들지 말고 기존 블록에 병합**할 것. 여러 개를 만들어도 동작은 하지만 설정이 흩어져 가독성이 떨어진다.
+
+---
+
+## R-008: 체크 예외 처리 어노테이션 제거
+
+- **카테고리**: language-idiom
+- **도입 강**: [9강](../learning-log/step-09.md)
+- **적용 조건**: 자바 코드에서 체크 예외(checked exception)를 던지는 메서드를 호출하기 위해 `@SneakyThrows`(Lombok), `throws` 선언, try-catch로 감싼 부분
+
+### 변환
+
+```diff
+-    @SneakyThrows
+-    public String main() {
+-        InetAddress localHost = getLocalHost();
++    fun main(): String {
++        val localHost = InetAddress.getLocalHost()
+```
+
+코틀린은 체크 예외 개념 자체가 없다 — 모든 예외가 자바의 `RuntimeException`(언체크 예외)처럼 취급된다. 그래서 체크 예외를 던지는 자바 메서드(`InetAddress.getLocalHost()`가 `UnknownHostException`을 던지는 것 등)를 코틀린에서 호출할 때는 `@SneakyThrows`, `throws` 선언, try-catch가 전부 불필요하다.
+
+### 주의사항
+
+- 예외를 실제로 처리해야 하는 비즈니스 로직(예: 실패 시 기본값 반환)이라면 여전히 try-catch를 쓴다. 이 규칙은 "체크 예외라서 억지로 감싸야 했던" 보일러플레이트만 제거 대상이다.
+
+---
+
+## R-009: 자바 게터 메서드 → 코틀린 프로퍼티 접근
+
+- **카테고리**: language-idiom
+- **도입 강**: [9강](../learning-log/step-09.md)
+- **적용 조건**: 자바 클래스(코틀린으로 변환되지 않은 클래스 포함)의 `getXxx()`/`isXxx()` 게터를 코틀린 코드에서 호출할 때
+
+### 변환
+
+```diff
+-<p>Host Name: ${localHost.getHostName()}</p>
+-<p>Host Address: ${localHost.getHostAddress()}</p>
++<p>Host Name: ${localHost.hostName}</p>
++<p>Host Address: ${localHost.hostAddress}</p>
+```
+
+코틀린은 JavaBean 게터 규칙(`getXxx()`/`isXxx()`)을 따르는 자바 메서드를 발견하면, 코틀린 쪽에서는 `.xxx` 프로퍼티처럼 접근할 수 있게 자동 매핑해준다(synthetic property). 대상 클래스가 자바 클래스여도 적용된다(코틀린으로 변환할 필요 없음).
+
+### 주의사항
+
+- `setXxx(value)` 세터가 있는 경우 `.xxx = value` 형태의 대입도 가능하다.
+- 파라미터가 있는 게터(`getXxx(int index)` 등)는 프로퍼티로 매핑되지 않는다.
+
+---
+
+## R-010: 문자열 포맷 & 멀티라인 문자열
+
+- **카테고리**: language-idiom
+- **도입 강**: [9강](../learning-log/step-09.md)
+- **적용 조건**: 자바의 `String.format(...)`/`"...".formatted(...)` 또는 텍스트 블록(`"""..."""`)을 코틀린으로 옮길 때
+
+### 변환
+
+```diff
+-return """
+-        <h1>API 서버</h1>
+-        <p>Host Name: %s</p>
+-        """.formatted(localHost.getHostName());
++return """
++    |<h1>API 서버</h1>
++    |<p>Host Name: ${localHost.hostName}</p>
++""".trimMargin()
+```
+
+- `String.format`/`.formatted()` → 코틀린 **문자열 템플릿** `${표현식}`을 문자열 안에 직접 씀 (자리표시자+인자 나열 방식 자체가 불필요).
+- 자바 text block은 공통 들여쓰기를 **자동으로** 제거하지만, 코틀린 `"""..."""`는 자동으로 제거되지 않는다. `.trimIndent()`(가장 적게 들여쓰기된 줄 기준 자동 제거) 또는 `.trimMargin()`(각 줄 앞 `|` 마커로 명시적 지정, 기본 마커 변경 가능)을 명시적으로 호출해야 한다.
+
+### 주의사항
+
+- 코드 들여쓰기가 여러 단계로 중첩된 곳에 있는 문자열이면 `trimIndent()`보다 `trimMargin()`이 더 예측 가능하다.
+
+---
+
+## R-011: Java Stream → Kotlin 컬렉션 함수
+
+- **카테고리**: language-idiom
+- **도입 강**: [9강](../learning-log/step-09.md)
+- **적용 조건**: `.stream().collect(Collectors.xxx(...))` 패턴을 코틀린으로 옮길 때 (흔한 패턴일수록 대응되는 코틀린 표준 함수가 있음)
+
+### 변환 예시 (Enumeration → Map)
+
+```diff
+-return Collections.list(session.getAttributeNames()).stream()
+-        .collect(Collectors.toMap(
+-                name -> name,
+-                session::getAttribute
+-        ));
++return session.attributeNames
++    .asSequence()
++    .associateWith { name -> session.getAttribute(name) }
+```
+
+자바의 `Collectors.toMap(keyMapper, valueMapper)`처럼 "원소를 키로, 특정 함수 결과를 값으로" 매핑하는 흔한 패턴은 코틀린 표준 라이브러리의 `associateWith { }` 하나로 대체된다. `java.util.Enumeration`은 `.asSequence()`로 코틀린의 지연 평가 `Sequence`로 변환해서 사용한다.
+
+### 주의사항
+
+- 이건 "패턴 매칭표"에 가깝다 — 모든 `Collectors.xxx`에 1:1 대응 코틀린 함수가 있는 건 아니므로, 다른 Stream 연산을 변환할 때는 그때그때 대응되는 코틀린 컬렉션 함수(`map`, `filter`, `groupBy`, `associateBy` 등)를 찾아 적용해야 한다.
 
 ---
 
