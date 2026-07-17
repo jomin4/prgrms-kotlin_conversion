@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **13강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **14강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -28,6 +28,7 @@
 | [R-011](#r-011-java-stream--kotlin-컬렉션-함수) | Java Stream → Kotlin 컬렉션 함수 | language-idiom | 9강 |
 | [R-012](#r-012-롬복-getter를-코틀린이-인식하지-못하는-문제) | 롬복 `@Getter`를 코틀린이 인식하지 못하는 문제 | interop | 10강 |
 | [R-013](#r-013-java-record--kotlin-data-class) | Java `record` → Kotlin `data class` | entity-dto | 10강 |
+| [R-014](#r-014-생성자-프로퍼티-어노테이션의-use-site-target-getjsonproperty) | 생성자 프로퍼티 어노테이션의 use-site target (`@get:JsonProperty` 등) | language-idiom | 14강 |
 
 ---
 
@@ -443,6 +444,33 @@ kotlin {
 
 - record의 컴포넌트 접근자는 `id()`처럼 **괄호 있는 메서드** 형태지만, `data class`의 프로퍼티는 `.id`로 **괄호 없이** 접근한다 — 자바 쪽에서 이 DTO를 호출하는 코드가 있다면 `dto.id()`가 아니라 코틀린이 생성한 JavaBean 스타일 게터 `dto.getId()`를 쓰게 된다(자바에서 호출 시).
 - 필드가 전부 불변(`val`)이고 상속을 쓰지 않는 단순 값 객체일 때만 적용한다. 상속이 필요하면 일반 `class`를 유지한다 (13강에서 이 트레이드오프를 다룸).
+
+---
+
+## R-014: 생성자 프로퍼티 어노테이션의 use-site target (`@get:JsonProperty` 등)
+
+- **카테고리**: language-idiom
+- **도입 강**: [14강](../learning-log/step-14.md)
+- **적용 조건**: 코틀린 주 생성자 프로퍼티에 Jackson(`@JsonProperty` 등) 같이 "어떤 JVM 요소(필드/게터/파라미터)에 붙었는지"가 동작에 영향을 주는 자바 어노테이션을 붙일 때
+
+### 문제 상황
+
+코틀린 생성자 프로퍼티(`val isAdmin: Boolean`) 하나는 컴파일 시 필드 / 생성자 파라미터 / 게터 메서드, 세 가지 JVM 요소로 나뉘어 생성된다. use-site target 없이 어노테이션을 붙이면 기본적으로 생성자 파라미터에 붙는 경우가 많은데, Jackson은 직렬화 시 **게터 메서드**에 붙은 어노테이션만 인식하므로 파라미터에 붙은 어노테이션은 무시되어 조용히 의도와 다르게 동작한다(예: JSON 키가 원하는 이름으로 안 나옴).
+
+### 해결 패턴
+
+```diff
+-@JsonProperty("isAdmin")
++@get:JsonProperty("isAdmin")
+ val isAdmin: Boolean
+```
+
+`@get:`, `@field:`, `@param:`, `@set:`, `@setparam:`, `@delegate:` 등 **use-site target**을 명시해서 어노테이션이 정확히 어디에 붙을지 지정한다. Jackson처럼 게터를 보고 판단하는 라이브러리는 `@get:`을 써야 한다.
+
+### 주의사항
+
+- 8강에서 추가한 `-Xannotation-default-target=param-property` 컴파일러 옵션은 "타겟을 명시 안 했을 때의 기본값"을 바꾸는 것이지, 이 상황처럼 정확히 게터를 겨냥해야 하는 경우를 대신해주지 않는다. Jackson 등 프레임워크에 보이는 어노테이션은 항상 명시적으로 use-site target을 쓰는 게 안전하다.
+- 역직렬화(JSON → 객체) 경로에서는 생성자 파라미터 쪽 어노테이션(`@param:`)이 중요할 수 있다 — 방향(직렬화/역직렬화)에 따라 필요한 target이 다를 수 있으므로 실제 사용 방향을 확인할 것.
 
 ---
 
