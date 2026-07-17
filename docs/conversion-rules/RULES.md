@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **15강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **16강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -32,6 +32,7 @@
 | [R-015](#r-015-static-필드메서드--companion-object) | `static` 필드/메서드 → `companion object` | language-idiom | 15강 |
 | [R-016](#r-016-nullable--assertion--lateinit) | Nullable + `!!` 단언 → `lateinit` | language-idiom | 15강 |
 | [R-017](#r-017-세터-주입--postconstruct--생성자-주입--init-블록) | 세터 주입 + `@PostConstruct` → 생성자 주입 + `init` 블록 | spring-di | 15강 |
+| [R-018](#r-018-jvmstatic으로-자바-호출-호환성-유지) | `@JvmStatic`으로 자바 호출 호환성 유지 | interop | 16강 |
 
 ---
 
@@ -574,6 +575,35 @@ kotlin {
 
 - 이 패턴은 R-016(`lateinit`)과 함께 쓰일 때 특히 유용하다 — 생성자 주입이 보장되므로 `lateinit` 필드가 "사용 전에 항상 채워져 있다"는 약속을 지키기 쉬워진다.
 - Spring은 생성자가 하나뿐인 클래스에는 `@Autowired` 없이도 자동으로 생성자 주입을 해준다.
+
+---
+
+## R-018: `@JvmStatic`으로 자바 호출 호환성 유지
+
+- **카테고리**: interop (자바-코틀린 상호운용)
+- **도입 강**: [16강](../learning-log/step-16.md)
+- **적용 조건**: `companion object` 멤버를, **아직 자바로 남아있는 다른 파일들이** `클래스명.메서드명()` 형태(예전 `static` 호출 방식)로 호출해야 할 때 — 마이그레이션 도중이 아니라면 필수는 아님
+
+### 문제 상황
+
+`companion object { val isDev ... }`는 바이트코드 상 진짜 `static`이 아니라, `Companion`이라는 별도 싱글턴 객체의 **인스턴스 멤버**로 컴파일된다. 그래서 자바 코드에서는 `AppConfig.Companion.isDev()`처럼 `Companion`을 거쳐야만 호출할 수 있다 — 클래스를 코틀린으로 바꿨다는 이유만으로 이걸 참조하는 모든 자바 호출부를 찾아 고쳐야 하는 상황이 생긴다.
+
+### 해결 패턴
+
+```diff
+ companion object {
++    @JvmStatic
+     val isDev: Boolean
+         get() = environment.matchesProfiles("dev")
+ }
+```
+
+`@JvmStatic`을 붙이면 컴파일러가 `Companion` 안의 멤버 외에 **바깥 클래스에 진짜 static 메서드를 하나 더 생성**한다. 그래서 자바 코드는 원래(순수 자바 시절)와 동일하게 `AppConfig.isDev()`로 호출할 수 있게 되고, 호출부를 전혀 안 고쳐도 된다. 코틀린 쪽 호출(`AppConfig.isDev`)은 애초에 문제없이 동작하므로 영향받지 않는다.
+
+### 주의사항
+
+- 자바/코틀린이 혼재된 점진적 마이그레이션 중에는 companion object를 만들 때마다 "이걸 아직 자바인 다른 파일이 참조할 가능성이 있는가"를 먼저 확인하고, 그렇다면 `@JvmStatic`을 기본으로 붙이는 게 안전하다.
+- 프로젝트 전체가 코틀린으로 다 옮겨진 뒤(더 이상 자바에서 호출할 일이 없는 시점)라면 `@JvmStatic`은 불필요한 보일러플레이트가 될 수 있다.
 
 ---
 
