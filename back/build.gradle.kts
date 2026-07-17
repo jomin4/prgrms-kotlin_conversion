@@ -4,6 +4,7 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
     kotlin("jvm") version "2.2.20"
     kotlin("plugin.spring") version "2.2.20"
+    kotlin("plugin.jpa") version "2.2.20"
 }
 
 group = "com"
@@ -35,7 +36,14 @@ tasks.withType<JavaCompile> {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_24)
+        freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
     }
+}
+
+allOpen {
+    annotation("jakarta.persistence.Entity")
+    annotation("jakarta.persistence.MappedSuperclass")
+    annotation("jakarta.persistence.Embeddable")
 }
 
 repositories {
@@ -71,6 +79,10 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.13.0")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.13.0")
 
+    // Kotlin - Jackson / Reflection
+    implementation("tools.jackson.module:jackson-module-kotlin")
+    implementation("org.jetbrains.kotlin:kotlin-reflect")
+
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
@@ -81,6 +93,8 @@ dependencies {
     testAnnotationProcessor("org.projectlombok:lombok")
 
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 }
 
 tasks.withType<Test> {

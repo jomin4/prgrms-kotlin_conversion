@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **7강까지**
+- 현재 커버리지: **8강까지**
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -19,6 +19,9 @@
 | [R-002](#r-002-javakotlin-컴파일-jvm-타겟-정합성-맞추기) | Java/Kotlin 컴파일 JVM 타겟 정합성 맞추기 | build-config | 6강 |
 | [R-003](#r-003-애플리케이션-진입점-main-변환) | 애플리케이션 진입점(`main`) 변환 | entrypoint | 6강 |
 | [R-004](#r-004-spring-빈-클래스는-open이어야-함--kotlinplugin.spring) | Spring 빈 클래스는 `open`이어야 함 → `kotlin("plugin.spring")` | build-config | 7강 |
+| [R-005](#r-005-jpa-엔티티-open-문제--kotlinplugin.jpa--allopen) | JPA 엔티티 `open` 문제 → `kotlin("plugin.jpa")` + `allOpen` | build-config | 8강 |
+| [R-006](#r-006-jackson이-코틀린-클래스를-직렬화역직렬화하도록-지원) | Jackson이 코틀린 클래스를 직렬화/역직렬화하도록 지원 | build-config | 8강 |
+| [R-007](#r-007-코틀린-컴파일러-옵션-null-안정성--어노테이션-타겟) | 코틀린 컴파일러 옵션 (null 안정성 / 어노테이션 타겟) | build-config | 8강 |
 
 ---
 
@@ -174,6 +177,91 @@ plugins {
 
 - 이 플러그인이 없을 때 임시방편으로 클래스에 직접 `open` 키워드를 붙여서 해결할 수도 있지만, 스프링 빈 클래스가 많아질수록 실수하기 쉬우므로 플러그인 적용이 정석이다.
 - Kotlin JVM 플러그인(R-001)이 먼저 적용되어 있어야 `kotlin("plugin.spring")`도 의미가 있다 (같은 Kotlin 버전으로 맞출 것).
+
+---
+
+## R-005: JPA 엔티티 `open` 문제 → `kotlin("plugin.jpa")` + `allOpen`
+
+- **카테고리**: build-config
+- **도입 강**: [8강](../learning-log/step-08.md)
+- **적용 조건**: `@Entity`, `@MappedSuperclass`, `@Embeddable`이 붙은 클래스를 코틀린으로 옮길 때
+
+### 문제 상황
+
+R-004와 같은 원리. Hibernate는 지연 로딩(lazy loading)을 위해 `@Entity` 클래스를 상속한 프록시를 런타임에 생성하는데, 코틀린 클래스는 기본 `final`이라 상속(프록시 생성)이 막힌다.
+
+### 해결 패턴
+
+```kotlin
+// build.gradle.kts — plugins 블록
+plugins {
+    kotlin("plugin.jpa") version "2.2.20"
+}
+
+// 파일 하단
+allOpen {
+    annotation("jakarta.persistence.Entity")
+    annotation("jakarta.persistence.MappedSuperclass")
+    annotation("jakarta.persistence.Embeddable")
+}
+```
+
+### 주의사항
+
+- `kotlin("plugin.jpa")`만 추가해도 위 세 어노테이션은 내부적으로 자동 open 처리된다. `allOpen {}` 블록을 굳이 명시하는 이유는 "어떤 어노테이션이 open 대상인지"를 소스에서 바로 보이게 하고, 필요 시 대상을 쉽게 추가/변경할 수 있게 하기 위함이다 (선택이지만 권장).
+- Jakarta EE 패키지(`jakarta.persistence.*`)를 쓰는 프로젝트 기준. `javax.persistence.*`를 쓰는 구버전 프로젝트라면 패키지 경로를 그에 맞게 바꿔야 한다.
+
+---
+
+## R-006: Jackson이 코틀린 클래스를 직렬화/역직렬화하도록 지원
+
+- **카테고리**: build-config
+- **도입 강**: [8강](../learning-log/step-08.md)
+- **적용 조건**: DTO/엔티티 등 JSON으로 변환되는 클래스를 코틀린으로 옮길 때 (REST API 프로젝트라면 사실상 필수)
+
+### 문제 상황
+
+Jackson은 리플렉션 기반으로 객체를 JSON으로 직렬화/역직렬화하는데, 기본 자바 리플렉션 API는 코틀린의 `data class`, 생성자 기본값(default parameter), null 안정성(nullable 타입) 같은 코틀린 고유 개념을 인식하지 못한다.
+
+### 해결 패턴
+
+```kotlin
+dependencies {
+    implementation("tools.jackson.module:jackson-module-kotlin")   // Jackson 3.x 계열
+    // 구버전(Jackson 2.x) 프로젝트라면: implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    implementation("org.jetbrains.kotlin:kotlin-reflect")          // 코틀린 리플렉션, jackson-module-kotlin이 내부적으로 필요로 함
+}
+```
+
+### 주의사항
+
+- 프로젝트가 Jackson 2.x인지 3.x인지에 따라 `jackson-module-kotlin`의 groupId(`com.fasterxml.jackson.module` vs `tools.jackson.module`)가 다르다. `./gradlew dependencies --configuration compileClasspath | grep -i jackson`으로 실제 사용 중인 Jackson 계열을 먼저 확인할 것.
+- `kotlin-reflect`는 크기가 있는 라이브러리라 꼭 필요한 경우에만(Jackson 코틀린 모듈처럼 리플렉션이 필요한 경우) 추가한다.
+
+---
+
+## R-007: 코틀린 컴파일러 옵션 (null 안정성 / 어노테이션 타겟)
+
+- **카테고리**: build-config
+- **도입 강**: [8강](../learning-log/step-08.md)
+- **적용 조건**: Spring/자바 라이브러리의 `@Nullable`/`@NonNull`(JSR-305)을 쓰는 프로젝트, 또는 주 생성자 파라미터에 검증 어노테이션(`@NotNull` 등)을 붙이는 경우. 상황에 따라 필요 없을 수도 있는 선택적 규칙.
+
+### 해결 패턴
+
+```kotlin
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
+    }
+}
+```
+
+- `-Xjsr305=strict`: 자바 라이브러리의 JSR-305 nullable 어노테이션을 코틀린 컴파일러가 엄격한 null 안정성 검사에 반영하도록 함.
+- `-Xannotation-default-target=param-property`: 주 생성자 파라미터가 동시에 프로퍼티일 때, 어노테이션을 파라미터와 프로퍼티 양쪽에 자동 적용 (최신 Kotlin 버전에서 지정 안 하면 경고 발생).
+
+### 주의사항
+
+- 프로젝트에 이미 다른 `kotlin { compilerOptions { ... } }` 블록이 있다면(예: JVM 타겟 설정, R-002) **새 블록을 또 만들지 말고 기존 블록에 병합**할 것. 여러 개를 만들어도 동작은 하지만 설정이 흩어져 가독성이 떨어진다.
 
 ---
 
