@@ -7,7 +7,6 @@ import com.back.global.jpa.entity.BaseEntity;
 import jakarta.persistence.Entity;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
-import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
@@ -18,7 +17,6 @@ import static jakarta.persistence.CascadeType.PERSIST;
 import static jakarta.persistence.CascadeType.REMOVE;
 
 @Entity
-@Getter
 @NoArgsConstructor
 public class Post extends BaseEntity {
     @ManyToOne
@@ -33,6 +31,22 @@ public class Post extends BaseEntity {
         this.author = author;
         this.title = title;
         this.content = content;
+    }
+
+    public Member getAuthor() {
+        return author;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public String getContent() {
+        return content;
+    }
+
+    public List<PostComment> getComments() {
+        return comments;
     }
 
     public void modify(String title, String content) {
