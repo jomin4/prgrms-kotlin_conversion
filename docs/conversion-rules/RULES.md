@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **14강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **15강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -29,6 +29,9 @@
 | [R-012](#r-012-롬복-getter를-코틀린이-인식하지-못하는-문제) | 롬복 `@Getter`를 코틀린이 인식하지 못하는 문제 | interop | 10강 |
 | [R-013](#r-013-java-record--kotlin-data-class) | Java `record` → Kotlin `data class` | entity-dto | 10강 |
 | [R-014](#r-014-생성자-프로퍼티-어노테이션의-use-site-target-getjsonproperty) | 생성자 프로퍼티 어노테이션의 use-site target (`@get:JsonProperty` 등) | language-idiom | 14강 |
+| [R-015](#r-015-static-필드메서드--companion-object) | `static` 필드/메서드 → `companion object` | language-idiom | 15강 |
+| [R-016](#r-016-nullable--assertion--lateinit) | Nullable + `!!` 단언 → `lateinit` | language-idiom | 15강 |
+| [R-017](#r-017-세터-주입--postconstruct--생성자-주입--init-블록) | 세터 주입 + `@PostConstruct` → 생성자 주입 + `init` 블록 | spring-di | 15강 |
 
 ---
 
@@ -471,6 +474,106 @@ kotlin {
 
 - 8강에서 추가한 `-Xannotation-default-target=param-property` 컴파일러 옵션은 "타겟을 명시 안 했을 때의 기본값"을 바꾸는 것이지, 이 상황처럼 정확히 게터를 겨냥해야 하는 경우를 대신해주지 않는다. Jackson 등 프레임워크에 보이는 어노테이션은 항상 명시적으로 use-site target을 쓰는 게 안전하다.
 - 역직렬화(JSON → 객체) 경로에서는 생성자 파라미터 쪽 어노테이션(`@param:`)이 중요할 수 있다 — 방향(직렬화/역직렬화)에 따라 필요한 target이 다를 수 있으므로 실제 사용 방향을 확인할 것.
+
+---
+
+## R-015: `static` 필드/메서드 → `companion object`
+
+- **카테고리**: language-idiom
+- **도입 강**: [15강](../learning-log/step-15.md)
+- **적용 조건**: 클래스 인스턴스 없이 공유되는 자바 `static` 필드/메서드를 코틀린으로 옮길 때
+
+### 변환
+
+```diff
+-public class AppConfig {
+-    private static Environment environment;
+-
+-    public static boolean isDev() {
+-        return environment.matchesProfiles("dev");
+-    }
+-}
++class AppConfig {
++    companion object {
++        private lateinit var environment: Environment
++
++        val isDev: Boolean
++            get() = environment.matchesProfiles("dev")
++    }
++}
+```
+
+코틀린엔 `static` 키워드가 없다. 클래스 안에 `companion object { ... }` 블록을 만들면, 그 클래스에 딱 하나 자동으로 딸려오는 싱글턴 객체가 생기고 그 멤버들이 static처럼 동작한다. 값만 계산해서 반환하는 static 메서드는 커스텀 게터가 있는 프로퍼티(`val x: T get() = ...`)로 옮기는 게 관례 — 호출부에서 괄호 없이 `AppConfig.isDev`처럼 접근.
+
+### 주의사항
+
+- 생성자 파라미터명과 companion 멤버명이 같으면 파라미터가 이름을 가려서, companion 멤버에 대입할 때 `Companion.멤버명 = ...`처럼 명시적으로 써야 한다.
+- **자바 코드에서 이 companion object 멤버를 호출하려면** `AppConfig.Companion.isDev()`처럼 어색하게 접근해야 한다. `@JvmStatic`으로 이 문제를 해결한다 ([16강](../learning-log/step-16.md) 참고).
+
+---
+
+## R-016: Nullable + `!!` 단언 → `lateinit`
+
+- **카테고리**: language-idiom
+- **도입 강**: [15강](../learning-log/step-15.md)
+- **적용 조건**: "생성 시점엔 값이 없지만, 실제 사용 시점엔 항상 채워져 있다고 보장할 수 있는" non-null 타입 프로퍼티 (주로 DI로 나중에 채워지는 필드)
+
+### 변환
+
+```diff
+-private var environment: Environment? = null
+-// 사용할 때마다:
+-environment!!.matchesProfiles("dev")
++private lateinit var environment: Environment
++// 사용할 때:
++environment.matchesProfiles("dev")
+```
+
+`lateinit`은 "지금 초기화하지 않아도 되지만, 실제로 쓰기 전엔 반드시 값을 채워 넣겠다"는 컴파일러와의 약속이다. 타입은 nullable(`?`)이 아닌 확정 non-null로 선언하므로, 사용하는 곳마다 `!!`(non-null 단언, 틀리면 크래시)를 안 붙여도 된다.
+
+### 주의사항
+
+- `lateinit`은 `var`에만 쓸 수 있고(재할당 가능해야 함), 원시 타입(`Int`, `Boolean` 등)에는 쓸 수 없다(참조 타입만 가능).
+- 값이 채워지기 전에 접근하면 `NullPointerException`이 아니라 `UninitializedPropertyAccessException`이 발생 — 원인 파악이 더 쉬운 에러 메시지를 준다.
+- "정말로 나중에 채워지는 게 보장되는가"를 확신할 수 없다면 억지로 `lateinit`을 쓰지 말고 nullable(`?`)을 유지하는 게 안전하다.
+
+---
+
+## R-017: 세터 주입 + `@PostConstruct` → 생성자 주입 + `init` 블록
+
+- **카테고리**: spring-di
+- **도입 강**: [15강](../learning-log/step-15.md)
+- **적용 조건**: `@Autowired`가 붙은 세터 메서드 + `@PostConstruct` 초기화 메서드 조합으로 되어있는 Spring 빈
+
+### 변환
+
+```diff
+-class AppConfig {
+-    @Autowired
+-    fun setEnvironment(environment: Environment) { ... }
+-
+-    @Autowired
+-    fun setObjectMapper(objectMapper: ObjectMapper?) { ... }
+-
+-    @PostConstruct
+-    fun postConstruct() { ... }
+-}
++class AppConfig(
++    environment: Environment,
++    objectMapper: ObjectMapper
++) {
++    init {
++        // 세터들 + postConstruct에서 하던 일을 여기 한 곳에
++    }
++}
+```
+
+생성자 파라미터로 의존성을 즉시 받으면, 객체가 존재하는 순간부터 이미 모든 의존성이 채워진 상태로 시작한다("불완전한 중간 상태"가 없음). `init { }` 블록은 객체 생성 시점에 한 번 실행되는 초기화 코드로, 별도의 생명주기 어노테이션(`@PostConstruct`) 없이 그 역할을 대신한다.
+
+### 주의사항
+
+- 이 패턴은 R-016(`lateinit`)과 함께 쓰일 때 특히 유용하다 — 생성자 주입이 보장되므로 `lateinit` 필드가 "사용 전에 항상 채워져 있다"는 약속을 지키기 쉬워진다.
+- Spring은 생성자가 하나뿐인 클래스에는 `@Autowired` 없이도 자동으로 생성자 주입을 해준다.
 
 ---
 
