@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **16강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **17강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -33,6 +33,11 @@
 | [R-016](#r-016-nullable--assertion--lateinit) | Nullable + `!!` 단언 → `lateinit` | language-idiom | 15강 |
 | [R-017](#r-017-세터-주입--postconstruct--생성자-주입--init-블록) | 세터 주입 + `@PostConstruct` → 생성자 주입 + `init` 블록 | spring-di | 15강 |
 | [R-018](#r-018-jvmstatic으로-자바-호출-호환성-유지) | `@JvmStatic`으로 자바 호출 호환성 유지 | interop | 16강 |
+| [R-019](#r-019-static-유틸-클래스--object-선언) | static 유틸 클래스 → `object` 선언 | language-idiom | 17강 |
+| [R-020](#r-020-jvmoverloads로-디폴트-파라미터를-자바-오버로드로-노출) | `@JvmOverloads`로 디폴트 파라미터를 자바 오버로드로 노출 | interop | 17강 |
+| [R-021](#r-021-varargs--vararg) | 가변인자(`varargs`) → `vararg` + 스프레드 연산자 | language-idiom | 17강 |
+| [R-022](#r-022-로케일-안전한-문자열-대소문자-변환) | 로케일 안전한 문자열 대소문자 변환 | language-idiom | 17강 |
+| [R-023](#r-023-자바-io-보일러플레이트--코틀린-확장-함수) | 자바 I/O 보일러플레이트 → 코틀린 확장 함수 | language-idiom | 17강 |
 
 ---
 
@@ -604,6 +609,138 @@ kotlin {
 
 - 자바/코틀린이 혼재된 점진적 마이그레이션 중에는 companion object를 만들 때마다 "이걸 아직 자바인 다른 파일이 참조할 가능성이 있는가"를 먼저 확인하고, 그렇다면 `@JvmStatic`을 기본으로 붙이는 게 안전하다.
 - 프로젝트 전체가 코틀린으로 다 옮겨진 뒤(더 이상 자바에서 호출할 일이 없는 시점)라면 `@JvmStatic`은 불필요한 보일러플레이트가 될 수 있다.
+
+---
+
+## R-019: static 유틸 클래스 → `object` 선언
+
+- **카테고리**: language-idiom
+- **도입 강**: [17강](../learning-log/step-17.md)
+- **적용 조건**: 인스턴스를 만들 필요 없이 모든 멤버가 `static`인 자바 유틸 클래스
+
+### 변환
+
+```diff
+-public class json {
+-    public static ObjectMapper objectMapper;
+-    public static String toString(Object object) { ... }
+-}
++object json {
++    lateinit var objectMapper: ObjectMapper
++
++    @JvmStatic
++    fun toString(obj: Any): String? { ... }
++}
+```
+
+`class` 대신 `object`로 선언하면 코틀린이 자동으로 유일한 인스턴스(싱글턴)를 만들어준다. 자바로 컴파일되면 `public static final X INSTANCE = new X()` + `private X() {}` 패턴과 동일.
+
+### 주의사항
+
+- `object`의 멤버도 바이트코드상 `INSTANCE`의 **인스턴스 메서드**다. R-018과 동일하게, 자바에서 이 멤버를 호출해야 한다면 `@JvmStatic`을 붙여야 `Ut.json.toString(x)`처럼 자연스럽게 호출 가능하다(없으면 `Ut.json.INSTANCE.toString(x)`).
+- 어디에 `@JvmStatic`이 필요한지는 감으로 짐작하지 말고, **grep으로 실제 자바 호출부를 확인**한 뒤 결정한다(R-018 참고) — 필요 없는 곳까지 붙일 필요는 없다.
+
+---
+
+## R-020: `@JvmOverloads`로 디폴트 파라미터를 자바 오버로드로 노출
+
+- **카테고리**: interop (자바-코틀린 상호운용)
+- **도입 강**: [17강](../learning-log/step-17.md)
+- **적용 조건**: 코틀린 디폴트 파라미터(`param: T = default`)가 있는 함수를, 인자를 생략한 형태로 자바에서도 호출해야 할 때
+
+### 문제 상황
+
+자바에는 "파라미터 기본값" 문법이 없다. `@JvmOverloads` 없이 컴파일하면 자바 바이트코드엔 풀파라미터 메서드 하나만 생기고, 인자를 생략한 자바 호출은 컴파일 에러가 난다.
+
+### 해결 패턴
+
+```diff
++@JvmOverloads
+ fun toString(obj: Any, defaultValue: String? = null): String? { ... }
+```
+
+`@JvmOverloads`를 붙이면 파라미터 개수별로 오버로드 메서드가 자동 생성되어, 자바에서 `toString(obj)`와 `toString(obj, "값")` 둘 다 호출 가능해진다.
+
+### 주의사항
+
+- 실제로 인자를 생략한 자바 호출부가 있는지 grep으로 확인하고 필요한 곳에만 붙인다(R-018/R-019와 같은 원칙).
+
+---
+
+## R-021: 가변인자(`varargs`) → `vararg` + 스프레드 연산자
+
+- **카테고리**: language-idiom
+- **도입 강**: [17강](../learning-log/step-17.md)
+- **적용 조건**: 자바의 `T... args` 가변인자 파라미터를 코틀린으로 옮기거나, 배열을 가변인자 자리에 전달할 때
+
+### 변환
+
+```diff
+-public static void run(String... args) { ... }
+-public static void runAsync(String... args) {
+-    new Thread(() -> run(args)).start();
+-}
++fun run(vararg args: String) { ... }
++fun runAsync(vararg args: String) {
++    Thread(Runnable { run(*args) }).start()
++}
+```
+
+함수 **선언**은 자바 가변인자와 1:1 대응(`vararg`). 하지만 이미 배열로 갖고 있는 값을 다른 vararg 파라미터 자리에 **전달**할 때는 스프레드 연산자(`*`)로 풀어서 넘겨야 한다 — 자바는 배열을 그대로 넘기면 되지만 코틀린은 `*` 없이 배열을 vararg 자리에 넣으면 타입 불일치로 컴파일 에러가 난다.
+
+### 주의사항
+
+- `*`는 "이 배열의 원소들을 낱개 인자로 풀어서 전달하라"는 뜻이며, 다른 언어의 spread와 유사하다 (6강 `runApplication<T>(*args)`와 동일한 문법).
+
+---
+
+## R-022: 로케일 안전한 문자열 대소문자 변환
+
+- **카테고리**: language-idiom
+- **도입 강**: [17강](../learning-log/step-17.md)
+- **적용 조건**: 자바의 인자 없는 `String.toLowerCase()`/`toUpperCase()`를 코틀린으로 옮길 때
+
+### 변환
+
+```diff
+-someString.toLowerCase()
++someString.lowercase(Locale.getDefault())
+```
+
+문자 대소문자 변환 규칙은 언어(로케일)에 따라 달라질 수 있다(예: 터키어 로케일에서 `"I".lowercase()`는 `"i"`가 아니라 `"ı"`). 자바의 인자 없는 `toLowerCase()`는 시스템 기본 로케일을 암묵적으로 사용해 환경별로 다르게 동작할 위험이 있다. 코틀린은 인자 없는 버전을 지원하지 않고 로케일 명시를 강제한다.
+
+### 주의사항
+
+- 원본 자바 코드와 동일한 동작을 유지하려면 `Locale.getDefault()`를 쓴다.
+- 로케일에 상관없이 항상 일관되게 동작해야 하는 경우(예: 프로토콜 문자열, 파일 확장자 비교 등 사람 언어와 무관한 값)라면 `Locale.ROOT`를 쓰는 게 더 안전하다.
+
+---
+
+## R-023: 자바 I/O 보일러플레이트 → 코틀린 확장 함수
+
+- **카테고리**: language-idiom
+- **도입 강**: [17강](../learning-log/step-17.md)
+- **적용 조건**: `InputStream`/`Reader`를 `BufferedReader`로 감싸서 한 줄씩 읽는 자바 코드를 코틀린으로 옮길 때
+
+### 변환
+
+```diff
+-try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
+-    String line;
+-    while ((line = reader.readLine()) != null) {
+-        System.out.println(line);
+-    }
+-}
++stream.bufferedReader().useLines { lines ->
++    lines.forEach { println(it) }
++}
+```
+
+코틀린 표준 라이브러리가 `InputStream`/`Reader`에 추가해주는 확장 함수(`bufferedReader()`, `useLines { }`)로 래핑+반복+자원 해제를 한 번에 표현한다. `useLines`는 `Closeable.use`와 같은 원리로 블록이 끝나면 자동으로 리더를 닫아준다(try-with-resources와 동일 효과). `lines`는 지연 평가되는 `Sequence<String>`이라 대용량 출력에도 메모리 효율적이다.
+
+### 주의사항
+
+- 한 번 소비하면 다시 순회할 수 없는 시퀀스이므로(스트림 기반), 같은 라인 목록을 여러 번 순회해야 한다면 먼저 `toList()` 등으로 리스트화해야 한다.
 
 ---
 
