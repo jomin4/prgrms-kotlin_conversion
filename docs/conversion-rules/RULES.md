@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **19강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **20강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -45,6 +45,8 @@
 | [R-028](#r-028-불변조건-위반-시-null-대신-예외) | 불변조건 위반 시 null 대신 예외 | design | 18강 |
 | [R-029](#r-029-jvmrecord로-진짜-자바-record-유지) | `@JvmRecord`로 진짜 자바 record 유지 | interop | 19강 |
 | [R-030](#r-030-jackson-use-site-target-선택-get-vs-field) | Jackson use-site target 선택: `@get:` vs `@field:` | interop | 19강 |
+| [R-031](#r-031-spring-security-코틀린-dsl-http--) | Spring Security 코틀린 DSL (`http { }`) | spring-di | 20강 |
+| [R-032](#r-032-sam-인터페이스를-람다로-직접-생성) | SAM 인터페이스를 람다로 직접 생성 | language-idiom | 20강 |
 
 ---
 
@@ -953,6 +955,60 @@ grep -rn "\.statusCode()\|\.resultCode()\|\.data()" *.java
 ### 주의사항
 
 - 잘못된 target을 쓰면 컴파일은 되지만 **Jackson이 어노테이션을 조용히 무시**하는 형태로 실패하므로(런타임에만 드러남), 클래스가 `@JvmRecord`인지 아닌지부터 먼저 확인하고 target을 고를 것.
+
+---
+
+## R-031: Spring Security 코틀린 DSL (`http { }`)
+
+- **카테고리**: spring-di
+- **도입 강**: [20강](../learning-log/step-20.md)
+- **적용 조건**: `SecurityFilterChain` 빈을 자바의 `HttpSecurity` 메서드 체이닝(`.csrf(...).oauth2Login(...)`) 스타일로 구성한 코드를 코틀린으로 옮길 때
+
+### 변환
+
+```diff
+-http
+-        .csrf(AbstractHttpConfigurer::disable)
+-        .oauth2Login(oauth2Login -> oauth2Login.successHandler(handler));
+-return http.build();
++import org.springframework.security.config.annotation.web.invoke
++
++http {
++    csrf { disable() }
++    oauth2Login {
++        authenticationSuccessHandler = handler
++    }
++}
++return http.build()
+```
+
+`org.springframework.security.config.annotation.web.invoke`를 import하면 `HttpSecurity`에 `operator fun invoke(configure: HttpSecurity.() -> Unit)` 확장이 활성화되어, `http(...)` 대신 `http { ... }`(중괄호 호출) 문법을 쓸 수 있다. 블록 내부는 수신 객체 지정 람다(`HttpSecurity.() -> Unit`)라서 `authorizeHttpRequests { }`, `csrf { }` 등을 메서드 체이닝 없이 나란히 나열할 수 있다.
+
+### 주의사항
+
+- 자바에서 여러 경로를 한 번에 받던 `requestMatchers(method, "p1", "p2", "p3")` 같은 vararg 오버로드는, DSL의 `authorize(pattern, access)`가 패턴을 하나만 받으므로 경로 개수만큼 줄을 나눠 반복해야 한다.
+- 프로젝트 고유의 설정(CORS 연결 여부, 허용 메서드 목록 등)은 강의 원본과 다를 수 있으므로, 변환 전 실제 자바 파일을 반드시 대조해서 빠뜨리지 않아야 한다.
+
+---
+
+## R-032: SAM 인터페이스를 람다로 직접 생성
+
+- **카테고리**: language-idiom
+- **도입 강**: [20강](../learning-log/step-20.md)
+- **적용 조건**: 메서드가 하나뿐인 함수형 인터페이스(`AuthenticationEntryPoint`, `AccessDeniedHandler` 등)를 자바 익명 클래스/람다로 구현한 코드
+
+### 변환
+
+```diff
+-(request, response, authException) -> {
+-    response.setStatus(401);
+-}
++AuthenticationEntryPoint { _, response, _ ->
++    response.status = 401
++}
+```
+
+코틀린에서 자바 함수형 인터페이스는 `인터페이스이름 { 람다본문 }` 형태로 바로 인스턴스를 만들 수 있다(SAM 변환). 안 쓰는 파라미터는 `_`로 표시해 "이건 의도적으로 안 쓴다"는 걸 드러낸다.
 
 ---
 
