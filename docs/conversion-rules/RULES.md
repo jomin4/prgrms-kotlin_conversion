@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **17강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **18강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -38,6 +38,11 @@
 | [R-021](#r-021-varargs--vararg) | 가변인자(`varargs`) → `vararg` + 스프레드 연산자 | language-idiom | 17강 |
 | [R-022](#r-022-로케일-안전한-문자열-대소문자-변환) | 로케일 안전한 문자열 대소문자 변환 | language-idiom | 17강 |
 | [R-023](#r-023-자바-io-보일러플레이트--코틀린-확장-함수) | 자바 I/O 보일러플레이트 → 코틀린 확장 함수 | language-idiom | 17강 |
+| [R-024](#r-024-optional-체인--안전-호출--엘비스-연산자) | `Optional` 체인 → 안전 호출(`?.`) + 엘비스 연산자(`?:`) | language-idiom | 18강 |
+| [R-025](#r-025-instanceof--캐스팅--is-스마트-캐스트) | `instanceof` + 캐스팅 → `is` 스마트 캐스트 | language-idiom | 18강 |
+| [R-026](#r-026-스코프-함수-letapply로-보일러플레이트-압축) | 스코프 함수 `let`/`apply`로 보일러플레이트 압축 | language-idiom | 18강 |
+| [R-027](#r-027-firstornull-takeif-컬렉션조건-관용구) | `firstOrNull`/`takeIf` 컬렉션·조건 관용구 | language-idiom | 18강 |
+| [R-028](#r-028-불변조건-위반-시-null-대신-예외) | 불변조건 위반 시 null 대신 예외 | design | 18강 |
 
 ---
 
@@ -741,6 +746,143 @@ kotlin {
 ### 주의사항
 
 - 한 번 소비하면 다시 순회할 수 없는 시퀀스이므로(스트림 기반), 같은 라인 목록을 여러 번 순회해야 한다면 먼저 `toList()` 등으로 리스트화해야 한다.
+
+---
+
+## R-024: `Optional` 체인 → 안전 호출(`?.`) + 엘비스 연산자(`?:`)
+
+- **카테고리**: language-idiom
+- **도입 강**: [18강](../learning-log/step-18.md)
+- **적용 조건**: `Optional.ofNullable(x).map(...).filter(...).orElse(default)` 형태의 null 처리 체인
+
+### 변환
+
+```diff
+-return Optional.ofNullable(req.getHeader(name))
+-        .filter(headerValue -> !headerValue.isBlank())
+-        .orElse(defaultValue);
++return req.getHeader(name) ?: defaultValue
+```
+
+`?.`(안전 호출)은 "왼쪽이 null이면 이후 체인을 건너뛰고 null이 된다"는 뜻, `?:`(엘비스 연산자)는 "왼쪽이 null이면 오른쪽 값을 대신 쓴다"는 뜻이다. 코틀린은 null 안정성이 언어 문법에 내장돼 있어서, 자바의 `Optional` 래핑 없이도 같은 안전성을 훨씬 짧게 표현한다.
+
+### 주의사항
+
+- `Optional`은 자바 라이브러리(JPA `findById` 등)가 반환하는 경우 여전히 그대로 받아 처리해야 한다 — 이 규칙은 "코틀린 코드 내부에서 새로 null 체크 체인을 짤 때"에 해당한다.
+
+---
+
+## R-025: `instanceof` + 캐스팅 → `is` 스마트 캐스트
+
+- **카테고리**: language-idiom
+- **도입 강**: [18강](../learning-log/step-18.md)
+- **적용 조건**: 타입을 확인한 뒤 그 타입으로 캐스팅해서 멤버에 접근하는 자바 코드
+
+### 변환
+
+```diff
+-if (principal instanceof SecurityUser) {
+-    SecurityUser securityUser = (SecurityUser) principal;
+-    return securityUser.getId();
+-}
++if (principal is SecurityUser) {
++    return principal.id   // 캐스팅 없이 바로 접근
++}
+```
+
+`is`로 타입을 확인한 블록 안에서는 코틀린이 자동으로 그 타입인 것처럼 취급해준다(스마트 캐스트). 별도의 캐스팅 구문이 필요 없다.
+
+### 주의사항
+
+- 스마트 캐스트는 해당 변수가 그 블록 안에서 변경되지 않는다는 걸 컴파일러가 보장할 수 있을 때만 동작한다(`val`이거나, `var`라도 재할당되지 않는 지역 변수 등). `var` 프로퍼티가 중간에 바뀔 수 있는 경우엔 스마트 캐스트가 안 먹혀서 명시적 캐스팅(`as`)이 필요할 수 있다.
+
+---
+
+## R-026: 스코프 함수 `let`/`apply`로 보일러플레이트 압축
+
+- **카테고리**: language-idiom
+- **도입 강**: [18강](../learning-log/step-18.md)
+- **적용 조건**: "null이 아닐 때만 처리"(`let`) 또는 "객체를 만들면서 여러 속성을 설정"(`apply`)하는 자바 코드
+
+### 변환
+
+```diff
+-Cookie cookie = new Cookie(name, value);
+-cookie.setPath("/");
+-cookie.setHttpOnly(true);
+-cookie.setSecure(true);
++val cookie = Cookie(name, value).apply {
++    path = "/"
++    isHttpOnly = true
++    secure = true
++}
+```
+
+```diff
+-if (principal != null) {
+-    return doSomething(principal);
+-}
+-return null;
++return principal?.let { doSomething(it) }
+```
+
+`apply { }`는 객체를 만든 직후 그 객체(`this`)를 대상으로 여러 설정을 이어붙이고 객체 자신을 반환한다. `let { }`은 값이 null이 아닐 때만 블록을 실행해 그 결과를 반환한다(`?.let { }` 조합으로 자주 쓰임).
+
+### 주의사항
+
+- 코틀린 스코프 함수는 `let`/`apply`/`run`/`with`/`also` 다섯 가지가 있고 미묘하게 다르다 — `apply`/`also`는 수신 객체 자신을 반환(설정 후 그 객체를 계속 쓸 때), `let`/`run`은 블록의 결과를 반환(값을 변환할 때)한다는 정도만 우선 기억해두면 충분하다.
+
+---
+
+## R-027: `firstOrNull`/`takeIf` 컬렉션·조건 관용구
+
+- **카테고리**: language-idiom
+- **도입 강**: [18강](../learning-log/step-18.md)
+- **적용 조건**: `stream().filter(...).findFirst().orElse(null)` 또는 "조건에 맞으면 값 유지, 아니면 null" 패턴
+
+### 변환
+
+```diff
+-return Arrays.stream(cookies)
+-        .filter(cookie -> name.equals(cookie.getName()))
+-        .map(Cookie::getValue)
+-        .filter(value -> value != null && !value.isBlank())
+-        .findFirst()
+-        .orElse(defaultValue);
++return cookies
++    ?.firstOrNull { it.name == name }
++    ?.value
++    ?.takeIf { it.isNotBlank() }
++    ?: defaultValue
+```
+
+`firstOrNull { 조건 }`은 조건에 맞는 첫 원소(없으면 null), `takeIf { 조건 }`은 조건이 참이면 그 값 그대로 유지하고 거짓이면 null로 바꾼다. `?:`(R-024)와 조합해 "조건 안 맞으면 기본값" 패턴을 짧게 표현한다.
+
+---
+
+## R-028: 불변조건 위반 시 null 대신 예외
+
+- **카테고리**: design (동작이 바뀌는 결정 — 기계적 변환이 아니므로 적용 전 실제 호출부 확인 필수)
+- **도입 강**: [18강](../learning-log/step-18.md)
+- **적용 조건**: "이 값이 없으면 안 되는 게 당연한" 상황(예: 인증이 보장된 경로에서 로그인 사용자 조회)에서 자바 코드가 관행적으로 `null`을 반환하던 경우
+
+### 변환
+
+```diff
+-public Member getActor() {
+-    // ...
+-    return null;   // 없으면 조용히 null
+-}
++val actor: Member
++    get() = // ...
++        ?: throw IllegalStateException("인증된 사용자가 없습니다.")   // 없으면 즉시 예외
+```
+
+"null이 나올 수 있는 타입"으로 두고 호출부마다 null 체크를 강제하는 대신, "이 상황에서 null은 프로그램의 버그"라고 판단되면 non-null 타입으로 선언하고 실패 시 명확한 예외를 던진다. 조용한 NPE보다 원인이 드러나는 예외가 디버깅에 유리하다.
+
+### 주의사항
+
+- **기계적 변환이 아니라 설계 판단**이다 — 적용 전 실제 호출부를 grep으로 확인해서, null을 실제로 의미 있게 처리하는 곳이 있는지 반드시 확인한 뒤 적용한다. 하나라도 null을 기대하는 호출부가 있다면 이 규칙을 적용하면 안 된다.
 
 ---
 
