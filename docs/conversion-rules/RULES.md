@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **18강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **19강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -43,6 +43,8 @@
 | [R-026](#r-026-스코프-함수-letapply로-보일러플레이트-압축) | 스코프 함수 `let`/`apply`로 보일러플레이트 압축 | language-idiom | 18강 |
 | [R-027](#r-027-firstornull-takeif-컬렉션조건-관용구) | `firstOrNull`/`takeIf` 컬렉션·조건 관용구 | language-idiom | 18강 |
 | [R-028](#r-028-불변조건-위반-시-null-대신-예외) | 불변조건 위반 시 null 대신 예외 | design | 18강 |
+| [R-029](#r-029-jvmrecord로-진짜-자바-record-유지) | `@JvmRecord`로 진짜 자바 record 유지 | interop | 19강 |
+| [R-030](#r-030-jackson-use-site-target-선택-get-vs-field) | Jackson use-site target 선택: `@get:` vs `@field:` | interop | 19강 |
 
 ---
 
@@ -883,6 +885,74 @@ kotlin {
 ### 주의사항
 
 - **기계적 변환이 아니라 설계 판단**이다 — 적용 전 실제 호출부를 grep으로 확인해서, null을 실제로 의미 있게 처리하는 곳이 있는지 반드시 확인한 뒤 적용한다. 하나라도 null을 기대하는 호출부가 있다면 이 규칙을 적용하면 안 된다.
+
+---
+
+## R-029: `@JvmRecord`로 진짜 자바 record 유지
+
+- **카테고리**: interop (자바-코틀린 상호운용)
+- **도입 강**: [19강](../learning-log/step-19.md)
+- **적용 조건**: 변환 대상이 원래 자바 `record`였고, **자바 코드에서 이미 record 스타일 접근자(`.xxx()`, `get` 없음)를 호출하는 곳이 있을 때**
+
+### 배경
+
+`data class`는 자바 record보다 먼저 나온 기능이라, 기본적으로 `java.lang.Object`를 상속하는 평범한 클래스(JavaBean 게터 `getXxx()`)로 컴파일된다. `@JvmRecord`를 붙여야 진짜 `java.lang.Record`를 상속하고, 접근자도 record 관례(`xxx()`, `get` 없음)로 생성된다.
+
+### 변환
+
+```diff
+-public record RsData<T>(String resultCode, int statusCode, String msg, T data) { ... }
++@JvmRecord
++data class RsData<T>(val resultCode: String, val statusCode: Int, val msg: String, val data: T?) { ... }
+```
+
+### 적용 여부 판단 방법
+
+grep으로 자바 호출부를 확인한다:
+```
+grep -rn "\.statusCode()\|\.resultCode()\|\.data()" *.java
+```
+- record 스타일 호출(`get` 없음)이 있으면 → `@JvmRecord` 필요
+- 생성자 호출뿐이거나 없으면 → 굳이 안 붙여도 됨(일반 `data class`로 충분, R-013)
+
+### 주의사항
+
+- Kotlin 1.5+, JVM 타겟 16+ 필요.
+- 모든 컴포넌트가 `val`이어야 하고, 다른 클래스를 상속할 수 없다(record 자체의 제약).
+- 10~14강에서 변환한 다른 record 기반 DTO들(`PostCommentDto` 등)은 record 스타일 호출이 없어서 `@JvmRecord`를 안 붙였다 — "원래 record였다"는 사실만으로 자동 적용하는 규칙이 아니라, **실제 호출부 확인이 먼저**다.
+
+---
+
+## R-030: Jackson use-site target 선택: `@get:` vs `@field:`
+
+- **카테고리**: interop (자바-코틀린 상호운용)
+- **도입 강**: [19강](../learning-log/step-19.md)
+- **적용 조건**: Jackson 어노테이션(`@JsonProperty`, `@JsonIgnore` 등)을 코틀린 생성자 프로퍼티에 붙일 때 — R-014의 확장/구체화
+
+### 규칙
+
+| 클래스 종류 | 올바른 use-site target |
+|---|---|
+| 평범한 `data class` (`@JvmRecord` 없음) | `@get:` (Jackson이 JavaBean 게터를 보고 판단) |
+| `@JvmRecord data class` (진짜 자바 record) | `@field:` (Jackson이 record는 필드/컴포넌트 기준으로 판단) |
+
+```diff
+-@JvmRecord
+ data class MemberDto(
+-    @field:JsonProperty("isAdmin") val isAdmin: Boolean
++    @get:JsonProperty("isAdmin") val isAdmin: Boolean
+ )
+
++@JvmRecord
+ data class RsData<T>(
+-    @get:JsonIgnore val statusCode: Int
++    @field:JsonIgnore val statusCode: Int
+ )
+```
+
+### 주의사항
+
+- 잘못된 target을 쓰면 컴파일은 되지만 **Jackson이 어노테이션을 조용히 무시**하는 형태로 실패하므로(런타임에만 드러남), 클래스가 `@JvmRecord`인지 아닌지부터 먼저 확인하고 target을 고를 것.
 
 ---
 
