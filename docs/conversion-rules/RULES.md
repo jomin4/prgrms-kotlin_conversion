@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **20강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **21강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -47,6 +47,8 @@
 | [R-030](#r-030-jackson-use-site-target-선택-get-vs-field) | Jackson use-site target 선택: `@get:` vs `@field:` | interop | 19강 |
 | [R-031](#r-031-spring-security-코틀린-dsl-http--) | Spring Security 코틀린 DSL (`http { }`) | spring-di | 20강 |
 | [R-032](#r-032-sam-인터페이스를-람다로-직접-생성) | SAM 인터페이스를 람다로 직접 생성 | language-idiom | 20강 |
+| [R-033](#r-033-상속--인터페이스-구현--부모-생성자-호출을-한-줄로) | 상속 + 인터페이스 구현 + 부모 생성자 호출을 한 줄로 | language-idiom | 21강 |
+| [R-034](#r-034-collection-extends-t--collectiont-선언-지점-가변성) | `Collection<? extends T>` → `Collection<T>` (선언 지점 가변성) | language-idiom | 21강 |
 
 ---
 
@@ -1009,6 +1011,56 @@ grep -rn "\.statusCode()\|\.resultCode()\|\.data()" *.java
 ```
 
 코틀린에서 자바 함수형 인터페이스는 `인터페이스이름 { 람다본문 }` 형태로 바로 인스턴스를 만들 수 있다(SAM 변환). 안 쓰는 파라미터는 `_`로 표시해 "이건 의도적으로 안 쓴다"는 걸 드러낸다.
+
+---
+
+## R-033: 상속 + 인터페이스 구현 + 부모 생성자 호출을 한 줄로
+
+- **카테고리**: language-idiom
+- **도입 강**: [21강](../learning-log/step-21.md)
+- **적용 조건**: 자바에서 클래스를 상속하고 생성자 안에서 `super(...)`를 호출하며, 동시에 인터페이스도 구현하는 경우
+
+### 변환
+
+```diff
+-public class SecurityUser extends User implements OAuth2User {
+-    public SecurityUser(int id, String username, String nickname, Collection<? extends GrantedAuthority> authorities) {
+-        super(username, "", authorities);
+-        this.id = id;
+-        this.nickname = nickname;
+-    }
+-}
++class SecurityUser(
++    val id: Int,
++    username: String,
++    val nickname: String,
++    authorities: Collection<GrantedAuthority>
++) : User(username, "", authorities), OAuth2User {
++}
+```
+
+코틀린은 `class X(생성자 파라미터...) : 부모클래스(부모생성자인자...), 인터페이스1, 인터페이스2` 형태로, 상속·부모 생성자 호출·인터페이스 구현을 클래스 선언 한 줄에 표현한다. 생성자 파라미터에 `val`/`var`를 붙이면 그 클래스의 프로퍼티가 되고, 안 붙이면 부모 생성자 등에 전달만 하고 버려진다 — "이 값을 나중에도 계속 참조해야 하는가"로 판단한다.
+
+---
+
+## R-034: `Collection<? extends T>` → `Collection<T>` (선언 지점 가변성)
+
+- **카테고리**: language-idiom
+- **도입 강**: [21강](../learning-log/step-21.md)
+- **적용 조건**: 자바의 `Collection<? extends T>`(읽기 전용 목적의 상한 와일드카드)를 코틀린으로 옮길 때
+
+### 변환
+
+```diff
+-Collection<? extends GrantedAuthority> authorities
++Collection<GrantedAuthority> authorities
+```
+
+자바 제네릭은 기본적으로 불변(invariant)이라 `List<Dog>`가 `List<Animal>`로 취급되지 않는다(추가 메서드가 있어 안전하지 않으므로). 그래서 "읽기만 할 것"임을 사용하는 자리마다 `? extends`로 표시해야 한다(사용 지점 가변성). 코틀린의 `Collection<out E>`는 애초에 `add(E)` 같은 메서드가 없는 읽기 전용 인터페이스로 **선언 시점에** 이미 공변으로 정의돼 있어서, 어디서 쓰든 와일드카드 없이 자동으로 하위 타입 컬렉션을 받을 수 있다(선언 지점 가변성).
+
+### 주의사항
+
+- `MutableCollection<T>`처럼 `add(T)`가 있는 타입은 이 트릭이 안 통한다 — 그런 경우엔 코틀린에서도 사용 지점에 `out T`/`in T`를 직접 명시해야 한다.
 
 ---
 
