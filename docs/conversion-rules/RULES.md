@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **21강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **22강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -49,6 +49,7 @@
 | [R-032](#r-032-sam-인터페이스를-람다로-직접-생성) | SAM 인터페이스를 람다로 직접 생성 | language-idiom | 20강 |
 | [R-033](#r-033-상속--인터페이스-구현--부모-생성자-호출을-한-줄로) | 상속 + 인터페이스 구현 + 부모 생성자 호출을 한 줄로 | language-idiom | 21강 |
 | [R-034](#r-034-collection-extends-t--collectiont-선언-지점-가변성) | `Collection<? extends T>` → `Collection<T>` (선언 지점 가변성) | language-idiom | 21강 |
+| [R-035](#r-035-후행-람다trailing-lambda) | 후행 람다(trailing lambda) | language-idiom | 22강 |
 
 ---
 
@@ -1061,6 +1062,27 @@ grep -rn "\.statusCode()\|\.resultCode()\|\.data()" *.java
 ### 주의사항
 
 - `MutableCollection<T>`처럼 `add(T)`가 있는 타입은 이 트릭이 안 통한다 — 그런 경우엔 코틀린에서도 사용 지점에 `out T`/`in T`를 직접 명시해야 한다.
+
+---
+
+## R-035: 후행 람다(trailing lambda)
+
+- **카테고리**: language-idiom
+- **도입 강**: [22강](../learning-log/step-22.md)
+- **적용 조건**: 함수/메서드의 **마지막 파라미터가 람다**(함수 타입)인 자바 코드(`Optional.orElseThrow(supplier)`, `Optional.map(fn)` 등)
+
+### 변환
+
+```diff
+-.orElseThrow(() -> new UsernameNotFoundException("사용자를 찾을 수 없습니다."));
++.orElseThrow { UsernameNotFoundException("사용자를 찾을 수 없습니다.") }
+```
+
+마지막 파라미터가 람다면 괄호 `()` 밖으로 빼서 `{ }` 블록만 붙일 수 있다. 파라미터가 없는 람다는 `() ->` 표시도 생략한다. 18강의 `?.let { }`도 같은 문법이다.
+
+### 주의사항
+
+- 람다가 마지막 파라미터가 아니거나, 람다 앞에 다른 인자가 더 있다면 그 인자들은 그대로 괄호 안에 남기고 마지막 람다만 밖으로 뺀다(`fn(a, b) { 람다 }`).
 
 ---
 
