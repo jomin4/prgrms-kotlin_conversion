@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **22강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **23강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -50,6 +50,10 @@
 | [R-033](#r-033-상속--인터페이스-구현--부모-생성자-호출을-한-줄로) | 상속 + 인터페이스 구현 + 부모 생성자 호출을 한 줄로 | language-idiom | 21강 |
 | [R-034](#r-034-collection-extends-t--collectiont-선언-지점-가변성) | `Collection<? extends T>` → `Collection<T>` (선언 지점 가변성) | language-idiom | 21강 |
 | [R-035](#r-035-후행-람다trailing-lambda) | 후행 람다(trailing lambda) | language-idiom | 22강 |
+| [R-036](#r-036-문자열-switch--enum-class--when) | 문자열 `switch` → `enum class` + `when` | language-idiom | 23강 |
+| [R-037](#r-037-triple구조분해로-여러-값을-한-번에-반환) | `Triple`/구조분해로 여러 값을 한 번에 반환 | language-idiom | 23강 |
+| [R-038](#r-038-mapgetvalue로-필수-키-접근-의도-명시) | `Map.getValue`로 "필수 키" 접근 의도 명시 | language-idiom | 23강 |
+| [R-039](#r-039-nullable-t를-반환하는-공용-타입rsdata의-data-필드-처리) | nullable `T?`를 반환하는 공용 타입(RsData)의 data 필드 처리 | design | 23강 |
 
 ---
 
@@ -1083,6 +1087,100 @@ grep -rn "\.statusCode()\|\.resultCode()\|\.data()" *.java
 ### 주의사항
 
 - 람다가 마지막 파라미터가 아니거나, 람다 앞에 다른 인자가 더 있다면 그 인자들은 그대로 괄호 안에 남기고 마지막 람다만 밖으로 뺀다(`fn(a, b) { 람다 }`).
+
+---
+
+## R-036: 문자열 `switch` → `enum class` + `when`
+
+- **카테고리**: language-idiom
+- **도입 강**: [23강](../learning-log/step-23.md)
+- **적용 조건**: 문자열 상수("KAKAO", "NAVER" 등)로 분기하는 자바 `switch`
+
+### 변환
+
+```diff
+-switch (providerTypeCode) {
+-    case "KAKAO" -> { ... }
+-    case "NAVER" -> { ... }
+-}
++private enum class OAuth2Provider { KAKAO, NAVER, GOOGLE }
++when (provider) {
++    OAuth2Provider.KAKAO -> { ... }
++    OAuth2Provider.NAVER -> { ... }
++    OAuth2Provider.GOOGLE -> { ... }
++}
+```
+
+문자열 분기는 오타(`"KAKA0"`)를 컴파일러가 못 잡는다. `enum class`로 값의 종류를 못박으면, `when`이 모든 경우를 다뤘는지 **컴파일 타임에 검사**해준다(분기 누락 시 컴파일 에러 — `else` 없이도 "전부 다뤘음"을 컴파일러가 확인 가능).
+
+### 주의사항
+
+- 문자열 → enum 변환 지점(`OAuth2Provider.from(registrationId)`)에서 알 수 없는 값이 들어오면 명확한 예외(`error(...)`)를 던지도록 한다.
+
+---
+
+## R-037: `Triple`/구조분해로 여러 값을 한 번에 반환
+
+- **카테고리**: language-idiom
+- **도입 강**: [23강](../learning-log/step-23.md)
+- **적용 조건**: 자바에서 여러 지역 변수를 미리 빈 값으로 선언해두고 분기마다 재할당하는 코드
+
+### 변환
+
+```diff
+-String nickname = "";
+-String profileImgUrl = "";
+-switch (x) {
+-    case A -> { nickname = "..."; profileImgUrl = "..."; }
+-}
++val (nickname, profileImgUrl) = when (x) {
++    A -> Pair("...", "...")
++}
+```
+
+`when`은 값을 만들어내는 표현식이라, 각 분기가 `Pair`(2개)/`Triple`(3개) 같은 묶음을 반환하고 `val (a, b) = ...`로 한 번에 분해할 수 있다. 재할당 가능한 가변 상태(`var`, 빈 값 선언 후 덮어쓰기)가 사라진다.
+
+### 주의사항
+
+- 4개 이상의 값을 묶어야 하면 `Pair`/`Triple`으로는 부족하다 — 이 경우 작은 `data class`를 만들어 구조분해하는 게 낫다.
+
+---
+
+## R-038: `Map.getValue`로 "필수 키" 접근 의도 명시
+
+- **카테고리**: language-idiom
+- **도입 강**: [23강](../learning-log/step-23.md)
+- **적용 조건**: 자바에서 `map.get(key)`로 값을 꺼낸 뒤 곧바로 캐스팅/사용하는 코드(키가 없으면 안 되는 상황)
+
+### 변환
+
+```diff
+-(Map<String, Object>) attributes.get("properties")
++attributes.getValue("properties") as Map<String, Any>
+```
+
+`get(key)`는 코틀린에서도 자바와 동일하게 없으면 `null`을 반환한다(동작이 바뀐 게 아님). `getValue(key)`는 코틀린이 추가로 제공하는 별도 함수로, 키가 없으면 그 자리에서 즉시 `NoSuchElementException`을 던진다. "이 키는 반드시 있어야 한다"는 의도를 코드로 드러낼 때 `get` 대신 `getValue`를 쓴다.
+
+---
+
+## R-039: nullable `T?`를 반환하는 공용 타입(RsData)의 data 필드 처리
+
+- **카테고리**: design (기계적 변환이 아니라 판단 필요)
+- **도입 강**: [23강](../learning-log/step-23.md)
+- **적용 조건**: `RsData<T>.data`처럼 `T?`(nullable)로 선언된 공용 응답 타입의 필드를, 특정 호출부에서 "여기선 항상 값이 있다"고 확신할 때
+
+### 패턴
+
+```kotlin
+// 항상 실제 값으로 구성됨을 소스 코드로 직접 확인한 뒤:
+val member = memberService.modifyOrJoin(username, password, nickname, profileImgUrl).data!!
+```
+
+`!!`(non-null 단언)로 처리하되, **반드시 근거(어떤 코드를 확인해서 왜 null이 아니라고 확신하는지)를 주석으로 남긴다.**
+
+### 주의사항 — 반대 사례(채택하지 않은 패턴)
+
+강사의 실제 커밋은 이 문제를 `RsData<T>`의 `data` 자체를 `T`(non-null)로 바꾸고 기본값을 `null as T`(안전하지 않은 캐스팅)로 주는 방식으로 "해결"했다. 이건 **채택하지 않았다** — `null as T`는 코틀린 null 안정성을 근본적으로 우회하는 패턴이라, 실제로 data가 없는 호출부(`RsData<Void>("404-1", "메시지")` 등 우리 프로젝트에 다수 존재)에서 타입은 non-null이라고 속이면서 실제로는 null이 들어있는 위험한 상태가 된다. **공용 타입의 nullable 여부는 그 타입을 쓰는 모든 호출부에 영향을 주므로, 특정 호출부의 편의를 위해 공용 타입 자체의 타입 안정성을 낮추지 않는다** — 대신 그 특정 호출부에서만 `!!`/`?: throw`로 처리한다(R-028과 같은 원칙).
 
 ---
 
