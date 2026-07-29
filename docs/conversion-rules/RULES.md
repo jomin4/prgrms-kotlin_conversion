@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **24강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **25강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -55,6 +55,8 @@
 | [R-038](#r-038-mapgetvalue로-필수-키-접근-의도-명시) | `Map.getValue`로 "필수 키" 접근 의도 명시 | language-idiom | 23강 |
 | [R-039](#r-039-nullable-t를-반환하는-공용-타입rsdata의-data-필드-처리) | nullable `T?`를 반환하는 공용 타입(RsData)의 data 필드 처리 | design | 23강 |
 | [R-040](#r-040-runcatching--getornull로-try-catch를-표현식으로) | `runCatching { }.getOrNull()`로 try-catch를 표현식으로 | language-idiom | 24강 |
+| [R-041](#r-041-매번-새로-만들던-객체를-생성자에서-한-번만) | 매번 새로 만들던 객체를 생성자에서 한 번만 | language-idiom | 25강 |
+| [R-042](#r-042-자바-인터페이스-오버라이드-시-파라미터-nullable-여부-정확히-맞추기) | 자바 인터페이스 오버라이드 시 파라미터 nullable 여부 정확히 맞추기 | interop | 25강 |
 
 ---
 
@@ -1208,6 +1210,48 @@ val member = memberService.modifyOrJoin(username, password, nickname, profileImg
 
 - 원본 자바 코드에 try-catch가 **없었는데** 새로 추가하는 거라면(24강처럼), 이건 단순 변환이 아니라 "실패 시 조용히 기본값으로 넘어가도록" 동작을 견고하게 만드는 것 — 기능 손실이 없는 개선인지 확인하고 반영한다.
 - 모든 예외를 삼키므로(`Exception` 전체), 정말 무시해도 되는 실패인지 판단이 필요하다 — 원래 예외를 로깅하고 싶다면 `.onFailure { e -> log.warn(...) }`를 체이닝할 수 있다.
+
+---
+
+## R-041: 매번 새로 만들던 객체를 생성자에서 한 번만
+
+- **카테고리**: language-idiom
+- **도입 강**: [25강](../learning-log/step-25.md)
+- **적용 조건**: 자바에서 매 메서드 호출마다 `new`로 새로 만들던 객체가, 사실 매번 다르게 만들 이유가 없는 고정된 설정/의존성일 때
+
+### 변환
+
+```diff
+-private DefaultOAuth2AuthorizationRequestResolver createDefaultResolver() {
+-    return new DefaultOAuth2AuthorizationRequestResolver(clientRegistrationRepository, ...);
+-}
+-// 호출부: createDefaultResolver().resolve(request)
++private val delegate = DefaultOAuth2AuthorizationRequestResolver(clientRegistrationRepository, ...)
++// 호출부: delegate.resolve(request)
+```
+
+변환하면서 로직을 자세히 들여다보면 이렇게 "매번 재생성할 필요 없는" 패턴이 종종 발견된다. 언어를 바꾸는 김에 이런 불필요한 객체 생성도 정리한다.
+
+---
+
+## R-042: 자바 인터페이스 오버라이드 시 파라미터 nullable 여부 정확히 맞추기
+
+- **카테고리**: interop (자바-코틀린 상호운용)
+- **도입 강**: [25강](../learning-log/step-25.md)
+- **적용 조건**: 자바 인터페이스를 코틀린 클래스가 구현(`override fun`)할 때
+
+### 문제 상황
+
+```
+e: Class 'X' is not abstract and does not implement abstract member: fun resolve(..., clientRegistrationId: String): ...
+e: 'resolve' overrides nothing.
+```
+
+자바 인터페이스의 파라미터 타입을 코틀린에서 임의로 nullable(`String?`)로 잘못 추측해서 오버라이드를 작성하면, 실제 인터페이스가 요구하는 시그니처(`String`, non-null)와 달라 "오버라이드하는 게 아니라 새 메서드를 하나 더 만든 것"으로 취급되어 컴파일 에러가 난다.
+
+### 해결
+
+실제 컴파일 에러 메시지에 나오는 "Potential signatures for overriding"을 그대로 보고 정확한 nullable 여부를 맞춰 쓴다. 자바 코드에 `@Nullable`/JSpecify `@NullMarked` 같은 어노테이션이 있는지도 확인한다 — 있으면 코틀린이 그걸 보고 정확한 nullable 타입을 추론해준다.
 
 ---
 
