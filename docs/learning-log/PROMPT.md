@@ -12,6 +12,15 @@
 - 베이스 코드: 강사의 자바 원본(`jhs512/p-14184-1`)을 clone 후 `.git` 제거, 새 레포로 재초기화한 상태 (Member/Post/PostComment 게시판 API)
 - 단계 번호 매핑: **강의의 "N강"을 그대로 "단계 번호"로 사용** (1강 = step-01, 67강 = step-67)
 - 진행 방식: 매 강마다 원본 강의 자료(slog.gg 페이지)의 요구사항과 강사의 실제 커밋을 참고해 코드와 설명을 제공한다. **(10강까지는 사용자가 직접 타이핑, 10강부터는 사용자가 승인하면 에이전트가 직접 파일에 반영하는 방식으로 전환)**
+- **진행 단위 (28강부터 확정)**: 한 강씩이 아니라, 아래 그룹 단위로 묶어서 진행한다. 한 그룹에 속한 강 전체를 한 번에 제시하고, 한 번의 승인으로 그룹 전체를 반영한다(강별로 로그/커밋은 그대로 각각 남기되, 확인은 그룹 단위로 받음).
+  - 공통 설정/예외 (28~33강): CustomConfigProperties, ResponseAspect, ServiceException, GlobalExceptionHandler, DevInitData, NotProdInitData
+  - 엔티티 (34~38강): BaseEntity, Member, Post, PostComment, val 적용
+  - 서비스/레포지토리 (39~42강): PostService, AuthTokenService, MemberService, Repository 2종
+  - 컨트롤러 (43~47강): Member/Post/PostComment 컨트롤러 5종
+  - 정리/코틀린화 1차 (48~51강): 롬복 제거, 불필요 타입 제거, stream 제거, 확장함수
+  - Optional 제거 (52~56강): Repository/Service Optional 제거 5종
+  - 구조 정리 (57~59강): 소스 폴더 이동, 불필요 어노테이션 제거, Claude Code 도입
+  - 테스트 변환 (60~67강): 테스트 6종 + 테스트 폴더 이동 + 최종 정리
 
 ---
 
