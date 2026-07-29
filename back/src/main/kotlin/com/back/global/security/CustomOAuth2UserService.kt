@@ -1,7 +1,6 @@
 package com.back.global.security
 
 import com.back.domain.member.member.service.MemberService
-import org.slf4j.LoggerFactory
 import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest
 import org.springframework.security.oauth2.core.user.OAuth2User
@@ -22,8 +21,6 @@ private enum class OAuth2Provider {
 class CustomOAuth2UserService(
     private val memberService: MemberService
 ) : DefaultOAuth2UserService() {
-
-    private val logger = LoggerFactory.getLogger(javaClass)
 
     // 카카오톡 로그인이 성공할 때 마다 이 함수가 실행된다.
     @Transactional

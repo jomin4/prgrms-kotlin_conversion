@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **23강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **24강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -54,6 +54,7 @@
 | [R-037](#r-037-triple구조분해로-여러-값을-한-번에-반환) | `Triple`/구조분해로 여러 값을 한 번에 반환 | language-idiom | 23강 |
 | [R-038](#r-038-mapgetvalue로-필수-키-접근-의도-명시) | `Map.getValue`로 "필수 키" 접근 의도 명시 | language-idiom | 23강 |
 | [R-039](#r-039-nullable-t를-반환하는-공용-타입rsdata의-data-필드-처리) | nullable `T?`를 반환하는 공용 타입(RsData)의 data 필드 처리 | design | 23강 |
+| [R-040](#r-040-runcatching--getornull로-try-catch를-표현식으로) | `runCatching { }.getOrNull()`로 try-catch를 표현식으로 | language-idiom | 24강 |
 
 ---
 
@@ -1181,6 +1182,32 @@ val member = memberService.modifyOrJoin(username, password, nickname, profileImg
 ### 주의사항 — 반대 사례(채택하지 않은 패턴)
 
 강사의 실제 커밋은 이 문제를 `RsData<T>`의 `data` 자체를 `T`(non-null)로 바꾸고 기본값을 `null as T`(안전하지 않은 캐스팅)로 주는 방식으로 "해결"했다. 이건 **채택하지 않았다** — `null as T`는 코틀린 null 안정성을 근본적으로 우회하는 패턴이라, 실제로 data가 없는 호출부(`RsData<Void>("404-1", "메시지")` 등 우리 프로젝트에 다수 존재)에서 타입은 non-null이라고 속이면서 실제로는 null이 들어있는 위험한 상태가 된다. **공용 타입의 nullable 여부는 그 타입을 쓰는 모든 호출부에 영향을 주므로, 특정 호출부의 편의를 위해 공용 타입 자체의 타입 안정성을 낮추지 않는다** — 대신 그 특정 호출부에서만 `!!`/`?: throw`로 처리한다(R-028과 같은 원칙).
+
+---
+
+## R-040: `runCatching { }.getOrNull()`로 try-catch를 표현식으로
+
+- **카테고리**: language-idiom
+- **도입 강**: [24강](../learning-log/step-24.md)
+- **적용 조건**: 자바의 `try { return X; } catch (Exception e) { return null/기본값; }` 패턴을 값 하나로 압축하고 싶을 때
+
+### 변환
+
+```diff
+-try {
+-    return doSomething();
+-} catch (Exception e) {
+-    return null;
+-}
++runCatching { doSomething() }.getOrNull()
+```
+
+`runCatching { }`은 블록 실행 결과(성공 값 또는 예외)를 `Result<T>` 객체로 감싼다. `.getOrNull()`은 성공 시 값을, 실패 시 `null`을 꺼낸다. 다른 추출 함수로 `.getOrDefault(기본값)`, `.getOrElse { 예외 -> 기본값 }`도 있다.
+
+### 주의사항
+
+- 원본 자바 코드에 try-catch가 **없었는데** 새로 추가하는 거라면(24강처럼), 이건 단순 변환이 아니라 "실패 시 조용히 기본값으로 넘어가도록" 동작을 견고하게 만드는 것 — 기능 손실이 없는 개선인지 확인하고 반영한다.
+- 모든 예외를 삼키므로(`Exception` 전체), 정말 무시해도 되는 실패인지 판단이 필요하다 — 원래 예외를 로깅하고 싶다면 `.onFailure { e -> log.warn(...) }`를 체이닝할 수 있다.
 
 ---
 
