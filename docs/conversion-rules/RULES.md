@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **25강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **26강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -57,6 +57,8 @@
 | [R-040](#r-040-runcatching--getornull로-try-catch를-표현식으로) | `runCatching { }.getOrNull()`로 try-catch를 표현식으로 | language-idiom | 24강 |
 | [R-041](#r-041-매번-새로-만들던-객체를-생성자에서-한-번만) | 매번 새로 만들던 객체를 생성자에서 한 번만 | language-idiom | 25강 |
 | [R-042](#r-042-자바-인터페이스-오버라이드-시-파라미터-nullable-여부-정확히-맞추기) | 자바 인터페이스 오버라이드 시 파라미터 nullable 여부 정확히 맞추기 | interop | 25강 |
+| [R-043](#r-043-긴-메서드를-작은-private-함수--pair로-분해) | 긴 메서드를 작은 private 함수 + `Pair`로 분해 | language-idiom | 26강 |
+| [R-044](#r-044-in-연산자로-컬렉션-포함-검사) | `in` 연산자로 컬렉션 포함 검사 | language-idiom | 26강 |
 
 ---
 
@@ -1252,6 +1254,53 @@ e: 'resolve' overrides nothing.
 ### 해결
 
 실제 컴파일 에러 메시지에 나오는 "Potential signatures for overriding"을 그대로 보고 정확한 nullable 여부를 맞춰 쓴다. 자바 코드에 `@Nullable`/JSpecify `@NullMarked` 같은 어노테이션이 있는지도 확인한다 — 있으면 코틀린이 그걸 보고 정확한 nullable 타입을 추론해준다.
+
+---
+
+## R-043: 긴 메서드를 작은 private 함수 + `Pair`로 분해
+
+- **카테고리**: language-idiom
+- **도입 강**: [26강](../learning-log/step-26.md)
+- **적용 조건**: 자바의 긴 메서드 하나에 여러 단계의 로직과 재할당되는 지역 변수가 몰려있는 코드
+
+### 변환
+
+```diff
+-Member member = null;
+-boolean isAccessTokenValid = false;
+-if (isAccessTokenExists) { /* member, isAccessTokenValid 재할당 */ }
+-if (member == null) { /* member 재할당 */ }
++val (member, isAccessTokenValid) = resolveMember(apiKey, accessToken)
++
++private fun resolveMember(apiKey: String, accessToken: String): Pair<Member, Boolean> {
++    memberFromAccessToken(accessToken)?.let { return it to true }
++    val member = memberService.findByApiKey(apiKey).orElse(null) ?: throw ServiceException(...)
++    return member to false
++}
+```
+
+코틀린으로 옮기는 김에, 서로 관련된 단계를 이름 있는 private 함수로 분리하고, 함께 계산되는 값 2개는 `Pair`(3개는 `Triple`, R-037)로 묶어 반환한다. 재할당 가능한 지역 변수(`var`, 초기 null 선언 후 나중에 채우기)가 사라지고 각 함수 이름이 그 자체로 문서 역할을 한다.
+
+### 주의사항
+
+- 순수 문법 변환이 아니라 **구조를 재구성하는 리팩터링**이다 — 원본의 실행 순서/조건 분기를 그대로 보존했는지 각 분기를 하나씩 대조해서 확인한다.
+
+---
+
+## R-044: `in` 연산자로 컬렉션 포함 검사
+
+- **카테고리**: language-idiom
+- **도입 강**: [26강](../learning-log/step-26.md)
+- **적용 조건**: 자바의 `collection.contains(x)`
+
+### 변환
+
+```diff
+-List.of("/a", "/b").contains(request.getRequestURI())
++request.requestURI in setOf("/a", "/b")
+```
+
+`in`은 내부적으로 `contains()`를 호출하는 연산자 문법일 뿐이지만, 자연어 순서("x가 목록에 있다")로 읽혀 가독성이 좋다. 매번 새로 만들 필요 없는 목록은 `List.of` 대신 조회 성능이 더 나은 `setOf`로 바꾸는 것도 함께 고려한다.
 
 ---
 
