@@ -65,8 +65,6 @@ object Ut {
     object json {
         lateinit var objectMapper: ObjectMapper
 
-        @JvmStatic
-        @JvmOverloads
         fun toString(obj: Any, defaultValue: String? = null): String? {
             return try {
                 objectMapper.writeValueAsString(obj)
@@ -102,7 +100,6 @@ object Ut {
             println("종료 코드: $exitCode")
         }
 
-        @JvmStatic
         fun runAsync(vararg args: String) {
             Thread(Runnable {
                 run(*args)

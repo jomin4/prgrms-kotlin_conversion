@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component
 class CustomConfigProperties {
     lateinit var notProdMembers: MutableList<NotProdMember>
 
-    @JvmRecord
     data class NotProdMember(
         val username: String,
         val apiKey: String,
