@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **38강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **42강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -68,6 +68,10 @@
 | [R-051](#r-051--참조-동일성-vs--구조적-동일성) | `===`(참조 동일성) vs `==`(구조적 동일성) | language-idiom | 34강 |
 | [R-052](#r-052-jpa-관계컬럼-어노테이션은-field-명시) | JPA 관계/컬럼 어노테이션은 `@field:` 명시 | interop | 35강 |
 | [R-053](#r-053-엔티티-불변-필드는-val-가변-필드는-var) | 엔티티 불변 필드는 `val`, 가변 필드는 `var` | entity-dto | 38강 |
+| [R-054](#r-054-param으로-생성자-주입된-value-설정값에-어노테이션-붙이기) | `@param:`으로 생성자 주입된 `@Value` 설정값에 어노테이션 붙이기 | interop | 40강 |
+| [R-055](#r-055-문자열-안의-리터럴-달러-기호-이스케이프) | 문자열 안의 리터럴 달러 기호 이스케이프 (`\$`) | language-idiom | 40강 |
+| [R-056](#r-056-mapof--mapof--to) | `Map.of(...)` → `mapOf(... to ...)` | language-idiom | 40강 |
+| [R-057](#r-057-인터페이스-상속도--integer--int) | 인터페이스 상속도 `:`, `Integer` → `Int` | language-idiom | 42강 |
 
 ---
 
@@ -1491,6 +1495,78 @@ Spring의 `@Transactional`(및 대부분의 AOP 기능)은 프록시 객체를 �
 ```
 
 엔티티의 각 필드를 변환할 때, 그 필드가 `modify()` 같은 메서드로 실제로 재할당되는지 확인한다. 절대 안 바뀌는 필드(연관관계의 소유자, 생성 시점에 고정되는 값)는 `val`로 선언해 "이 필드는 절대 안 바뀐다"는 것을 타입 시스템으로 보장한다.
+
+---
+
+## R-054: `@param:`으로 생성자 주입된 `@Value` 설정값에 어노테이션 붙이기
+
+- **카테고리**: interop
+- **도입 강**: [40강](../learning-log/step-40.md)
+- **적용 조건**: 자바에서 필드에 `@Value("${...}")`로 설정값을 주입하던 것을 생성자 주입으로 바꿀 때
+
+### 변환
+
+```diff
+-@Value("${custom.jwt.secretKey}")
+-private String secret;
++class AuthTokenService(
++    @param:Value("\${custom.jwt.secretKey}")
++    private val secret: String,
++)
+```
+
+`@Value`는 스프링이 생성자 파라미터를 보고 값을 주입하므로 `@param:` use-site target이 필요하다(14강 `@get:`, 19강 `@field:`에 이어 세 번째 target).
+
+---
+
+## R-055: 문자열 안의 리터럴 달러 기호 이스케이프 (`\$`)
+
+- **카테고리**: language-idiom
+- **도입 강**: [40강](../learning-log/step-40.md)
+- **적용 조건**: 문자열 안에 `$`로 시작하는 리터럴 텍스트(Spring의 `${...}` 플레이스홀더 등)를 그대로 넣어야 할 때
+
+### 변환
+
+```diff
+-"${custom.jwt.secretKey}"
++"\${custom.jwt.secretKey}"
+```
+
+코틀린 문자열은 `$`를 문자열 템플릿(변수 보간) 시작 기호로 예약해뒀다. `$` 뒤에 오는 텍스트를 코틀린 변수로 해석하지 않고 **글자 그대로** 두려면 `\$`로 이스케이프해야 한다.
+
+---
+
+## R-056: `Map.of(...)` → `mapOf(... to ...)`
+
+- **카테고리**: language-idiom
+- **도입 강**: [40강](../learning-log/step-40.md)
+- **적용 조건**: 자바의 `Map.of(k1, v1, k2, v2, ...)`
+
+### 변환
+
+```diff
+-Map.of("id", id, "username", username)
++mapOf("id" to id, "username" to username)
+```
+
+`to`는 두 값을 묶어 `Pair`를 만드는 중위 함수. `mapOf(Pair, Pair, ...)`를 `to`로 더 읽기 좋게 표현한 것.
+
+---
+
+## R-057: 인터페이스 상속도 `:`, `Integer` → `Int`
+
+- **카테고리**: language-idiom
+- **도입 강**: [42강](../learning-log/step-42.md)
+- **적용 조건**: 자바 인터페이스가 다른 인터페이스를 `extends`하는 경우 (Spring Data JPA의 `Repository extends JpaRepository<T, ID>` 등)
+
+### 변환
+
+```diff
+-public interface PostRepository extends JpaRepository<Post, Integer> {
++interface PostRepository : JpaRepository<Post, Int> {
+```
+
+클래스 상속(21강)과 마찬가지로 인터페이스 상속도 `:`를 쓴다. 자바 제네릭에는 원시 타입을 못 넣어서 박싱 타입 `Integer`가 필요했지만, 코틀린은 원시/박싱 구분이 언어 차원에서 없어 `Int` 하나로 통일해서 쓰고 컴파일러가 상황에 맞게 박싱을 처리한다.
 
 ---
 
