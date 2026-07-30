@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **58강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **67강까지 (전체 강의 완료)** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -80,6 +80,8 @@
 | [R-063](#r-063-jparepository-표준-메서드는-service-계층에서-nullable로-변환) | `JpaRepository` 표준 메서드는 Service 계층에서 nullable로 변환 | entity-dto | 55강 |
 | [R-064](#r-064-var-재할당-분기를-nullable-체이닝-표현식으로-재구성) | `var` 재할당 분기를 nullable 체이닝 표현식으로 재구성 | language-idiom | 53강 |
 | [R-065](#r-065-jvm-상호운용-어노테이션-제거-전-grep-감사--테스트-실증) | `@Jvm*` 상호운용 어노테이션 제거 전 grep 감사 + 테스트 실증 | interop | 58강 |
+| [R-066](#r-066-테스트-코드에서도-nullable-반환값은-getorthrow로-확정) | 테스트 코드에서도 nullable 반환값은 `getOrThrow()`로 확정 | test | 60강 |
+| [R-067](#r-067-mockmvc-커스텀-검증은-sam-변환-람다로) | MockMvc 커스텀 검증(`ResultMatcher`)은 SAM 변환 람다로 | test | 62강 |
 
 ---
 
@@ -1770,6 +1772,56 @@ Repository가 상속하는 `JpaRepository`의 `findById`는 Spring Data JPA 표�
 
 - grep 감사는 "지금 시점"의 스냅샷이다. 이후 자바 파일이 추가/복원되면 재검토가 필요할 수 있다.
 - 테스트 통과가 100% 보증은 아니다(예: JSON 응답에 특정 필드의 부재를 명시적으로 검증하는 테스트가 없다면 회귀를 못 잡을 수 있음). 가능하면 강사의 실제 커밋과 diff를 대조하는 등 2차 근거를 함께 확보한다.
+
+---
+
+## R-066: 테스트 코드에서도 nullable 반환값은 `getOrThrow()`로 확정
+
+- **카테고리**: test
+- **도입 강**: [60강](../learning-log/step-60.md)
+- **적용 조건**: Optional 제거([R-061](#r-061-optionalt--t-nullable-타입으로-전환)) 이후 `findById`/`findByUsername` 등 서비스 메서드가 `T?`를 반환하게 된 상태에서, 테스트 코드가 "이 데이터는 테스트 시나리오상 반드시 존재한다"고 가정하고 바로 프로퍼티에 접근해야 할 때
+
+### 패턴
+
+```diff
+-Member member = memberService.findByUsername("user1");
+-assertThat(member.getName())...
++val member = memberService.findByUsername("user1").getOrThrow()
++assertThat(member.name)...
+```
+
+메인 소스와 동일하게, "없으면 테스트 자체가 실패해야 하는" 지점에는 [R-062](#r-062-getorthrow-확장-함수로-optionalget과-동일한-표현력-유지)의 `getOrThrow()` 확장 함수를 그대로 재사용한다. 별도의 테스트 전용 헬퍼를 새로 만들지 않는다.
+
+### 주의사항
+
+- 존재하지 않는 경우를 검증하는 테스트(404 케이스 등)에서는 `getOrThrow()`를 쓰면 안 된다 — 그 자체가 테스트 대상이므로 `null` 여부를 직접 assert 하거나, 애초에 서비스 메서드를 호출하지 않고 API 응답만 검증한다.
+
+---
+
+## R-067: MockMvc 커스텀 검증(`ResultMatcher`)은 SAM 변환 람다로
+
+- **카테고리**: test
+- **도입 강**: [62강](../learning-log/step-62.md)
+- **적용 조건**: `resultActions.andExpect(result -> { ... })`처럼 자바 람다로 `ResultMatcher`(메서드 1개짜리 함수형 인터페이스)를 직접 구현해 쿠키/헤더 등을 커스텀 검증하는 코드
+
+### 패턴
+
+```diff
+-resultActions.andExpect(result -> {
+-    Cookie apiKeyCookie = result.getResponse().getCookie("apiKey");
+-    assertThat(apiKeyCookie.getValue()).isEqualTo(member.getApiKey());
+-});
++resultActions.andExpect { result ->
++    val apiKeyCookie = result.response.getCookie("apiKey")!!
++    assertThat(apiKeyCookie.value).isEqualTo(member.apiKey)
++}
+```
+
+`ResultMatcher`는 자바 함수형 인터페이스이므로 코틀린의 SAM(Single Abstract Method) 변환 대상이 되어, 마지막 인자가 함수형 인터페이스인 자바 메서드를 호출할 때 트레일링 람다 문법을 그대로 쓸 수 있다. `MockHttpServletResponse.getCookie(name)`은 자바 API라 nullable로 들어오므로, 원본 자바 코드가 null 체크 없이 바로 `.getValue()`를 호출했던 것과 동일하게 `!!`로 non-null 단언한다("쿠키가 없으면 테스트가 NPE로 실패해야 정상"인 상황이므로 안전하게 넘어가는 `?.`가 아니라 `!!`가 맞다).
+
+### 주의사항
+
+- `!!`는 "없으면 즉시 실패해야 정상"인 지점에만 쓴다. 쿠키가 없을 수 있는 것도 정상 시나리오라면 `?.let { }`으로 분기해야 한다.
 
 ---
 
