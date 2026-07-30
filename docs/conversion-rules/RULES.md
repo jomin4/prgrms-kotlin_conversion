@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **47강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **51강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -72,6 +72,9 @@
 | [R-055](#r-055-문자열-안의-리터럴-달러-기호-이스케이프) | 문자열 안의 리터럴 달러 기호 이스케이프 (`\$`) | language-idiom | 40강 |
 | [R-056](#r-056-mapof--mapof--to) | `Map.of(...)` → `mapOf(... to ...)` | language-idiom | 40강 |
 | [R-057](#r-057-인터페이스-상속도--integer--int) | 인터페이스 상속도 `:`, `Integer` → `Int` | language-idiom | 42강 |
+| [R-058](#r-058-전체-변환-완료-후-롬복-의존성-제거) | 전체 변환 완료 후 롬복 의존성 제거 | build-config | 48강 |
+| [R-059](#r-059-쓸데없는-타입-선언-제거-체크리스트) | 쓸데없는 타입 선언 제거 체크리스트 | language-idiom | 49강 |
+| [R-060](#r-060-직접-만든-확장-함수로-반복되는-변환-로직-추출) | 직접 만든 확장 함수로 반복되는 변환 로직 추출 | language-idiom | 51강 |
 
 ---
 
@@ -1567,6 +1570,74 @@ Spring의 `@Transactional`(및 대부분의 AOP 기능)은 프록시 객체를 �
 ```
 
 클래스 상속(21강)과 마찬가지로 인터페이스 상속도 `:`를 쓴다. 자바 제네릭에는 원시 타입을 못 넣어서 박싱 타입 `Integer`가 필요했지만, 코틀린은 원시/박싱 구분이 언어 차원에서 없어 `Int` 하나로 통일해서 쓰고 컴파일러가 상황에 맞게 박싱을 처리한다.
+
+---
+
+## R-058: 전체 변환 완료 후 롬복 의존성 제거
+
+- **카테고리**: build-config
+- **도입 강**: [48강](../learning-log/step-48.md)
+- **적용 조건**: 프로젝트의 모든 소스(메인+테스트)가 코틀린으로 변환 완료되어 더 이상 롬복 어노테이션을 쓰는 파일이 없을 때
+
+### 확인 방법
+
+```bash
+grep -rl "lombok" back/src
+```
+빈 결과가 나오면 `build.gradle.kts`의 롬복 관련 의존성 4줄(`compileOnly`, `annotationProcessor`, `testCompileOnly`, `testAnnotationProcessor`)을 전부 제거한다.
+
+### 주의사항
+
+- 일부 파일만 변환된 중간 단계에서는 롬복을 제거하면 안 된다 — 반드시 grep으로 "정말 아무도 안 쓰는지" 확인 후 제거.
+
+---
+
+## R-059: 쓸데없는 타입 선언 제거 체크리스트
+
+- **카테고리**: language-idiom
+- **도입 강**: [49강](../learning-log/step-49.md)
+- **적용 조건**: 변환 과정에서 습관적으로 남아있는, 우변에서 이미 타입이 추론 가능한 명시적 타입 선언
+
+### 자주 나오는 패턴
+
+```diff
+-val actor: Member = rq.actor          // 우변이 이미 Member를 반환
++val actor = rq.actor
+
+-val list: MutableList<String> = ArrayList()   // 자바식 타입+생성자
++val list = mutableListOf<String>()
+
+-.filter { comment: PostComment -> ... }        // 람다 파라미터 타입, 추론 가능하면 생략
++.filter { comment -> ... }
+```
+
+타입을 지우고 나서 더 이상 쓰이지 않게 된 import(예: 그 타입 하나만 쓰려고 넣었던 import)도 함께 지운다.
+
+### 주의사항
+
+- 타입 선언이 "의도를 드러내는 문서 역할"을 하는 경우(예: 인터페이스 타입으로 일부러 넓혀서 선언)는 지우지 않는다 — 우변 타입 그대로를 반복 표기했을 뿐인 경우만 대상.
+
+---
+
+## R-060: 직접 만든 확장 함수로 반복되는 변환 로직 추출
+
+- **카테고리**: language-idiom
+- **도입 강**: [51강](../learning-log/step-51.md)
+- **적용 조건**: 여러 클래스에 걸쳐 똑같은 자바 유틸리티 API 호출 패턴(예: Base64 인코딩/디코딩)이 반복될 때
+
+### 패턴
+
+```kotlin
+// back/src/main/kotlin/com/back/standard/extensions/base64Encode.kt
+fun String.base64Encode(): String = Base64.UrlSafe.encode(this.toByteArray(StandardCharsets.UTF_8))
+fun String.base64Decode(): String = Base64.UrlSafe.decode(this).decodeToString()
+```
+
+`String`처럼 이미 존재하는 타입(자바 표준 라이브러리 타입 포함)에도 확장 함수를 추가할 수 있다. 반복되는 변환 로직을 확장 함수로 뽑아두면, 호출부는 `rawState.base64Encode()`처럼 그 타입이 원래 그 기능을 가진 것처럼 자연스럽게 쓸 수 있다.
+
+### 주의사항
+
+- 코틀린 표준 라이브러리의 최신 API(`kotlin.io.encoding.Base64` 등)가 아직 실험적(`@OptIn(...)` 필요)일 수 있다 — 안정화 이전 API를 프로덕션에 쓸지는 팀 정책에 따라 판단.
 
 ---
 

@@ -54,7 +54,7 @@ class Member(
 
     private val authoritiesAsStringList: List<String>
         get() {
-            val authorities: MutableList<String> = ArrayList()
+            val authorities = mutableListOf<String>()
 
             if (isAdmin) authorities.add("ROLE_ADMIN")
 

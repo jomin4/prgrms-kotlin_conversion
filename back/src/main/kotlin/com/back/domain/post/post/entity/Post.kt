@@ -37,10 +37,7 @@ class Post(
     }
 
     fun findCommentById(id: Int): Optional<PostComment> {
-        return comments
-            .stream()
-            .filter { comment: PostComment -> comment.id == id }
-            .findFirst()
+        return Optional.ofNullable(comments.find { it.id == id })
     }
 
     fun deleteComment(postComment: PostComment): Boolean {
