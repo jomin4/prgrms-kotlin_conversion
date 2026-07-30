@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **27강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **33강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -60,6 +60,9 @@
 | [R-043](#r-043-긴-메서드를-작은-private-함수--pair로-분해) | 긴 메서드를 작은 private 함수 + `Pair`로 분해 | language-idiom | 26강 |
 | [R-044](#r-044-in-연산자로-컬렉션-포함-검사) | `in` 연산자로 컬렉션 포함 검사 | language-idiom | 26강 |
 | [R-045](#r-045-어노테이션-값으로-다른-어노테이션을-넣을-때-없이-생성자-호출) | 어노테이션 값으로 다른 어노테이션을 넣을 때 `@` 없이 생성자 호출 | language-idiom | 27강 |
+| [R-046](#r-046-예외-처리-로직에-없던-방어-코드-추가) | 인덱스/배열 접근에 없던 방어 코드 추가 (`getOrElse`/`getOrNull`) | design | 31강 |
+| [R-047](#r-047-filterisinstancet로-타입-필터링-압축) | `filterIsInstance<T>()`로 타입 필터링 압축 | language-idiom | 31강 |
+| [R-048](#r-048-self-injection으로-transactional-프록시-우회-호출) | self-injection으로 `@Transactional` 프록시 우회 호출 | spring-di | 33강 |
 
 ---
 
@@ -1319,6 +1322,78 @@ e: 'resolve' overrides nothing.
 ```
 
 코틀린은 "선언(클래스/함수 등)에 어노테이션을 적용"할 때만 `@`를 쓴다. 어노테이션 파라미터 자리에 값으로 넣을 때는 그 어노테이션 클래스의 **생성자를 호출하는 것**과 동일하게 취급해 `@` 없이 쓴다(어노테이션도 결국 필드를 가진 특별한 클래스이므로, 다른 클래스의 생성자 호출과 같은 문법).
+
+---
+
+## R-046: 인덱스/배열 접근에 없던 방어 코드 추가 (`getOrElse`/`getOrNull`)
+
+- **카테고리**: design (동작이 안전해지는 방향의 개선 — 적용 전 원본 의도 확인)
+- **도입 강**: [31강](../learning-log/step-31.md)
+- **적용 조건**: 자바가 `array[i]`/`list.get(i)`로 인덱스에 무조건 접근해서, 범위를 벗어나면 예외가 나는 코드
+
+### 변환
+
+```diff
+-String field = violation.getPropertyPath().toString().split("\\.", 2)[1];
++val field = path.split(".", limit = 2).getOrElse(1) { path }
+```
+
+`getOrElse(인덱스) { 기본값 }`은 그 인덱스가 없으면 예외 대신 람다의 결과를 반환한다. `getOrNull(인덱스)`는 없으면 `null`을 반환한다(`?:`와 조합).
+
+### 주의사항
+
+- 원본에 없던 안전장치이므로, "이 인덱스가 항상 존재한다"는 원본의 암묵적 가정이 실제로 항상 참인지, 아니면 정말 예외적인 입력에서 깨질 수 있는지 먼저 판단한다. 예외적 입력이 실제로 발생 가능하다면 이 방어 코드가 유의미한 개선이다.
+
+---
+
+## R-047: `filterIsInstance<T>()`로 타입 필터링 압축
+
+- **카테고리**: language-idiom
+- **도입 강**: [31강](../learning-log/step-31.md)
+- **적용 조건**: `stream().filter(x -> x instanceof T).map(x -> (T) x)` 패턴
+
+### 변환
+
+```diff
+-.filter(error -> error instanceof FieldError)
+-.map(error -> (FieldError) error)
++.filterIsInstance<FieldError>()
+```
+
+18강의 `is` 스마트 캐스트(R-025)를 컬렉션 스트림에 적용한 버전. "이 타입인 것만 걸러서, 이미 그 타입으로 캐스팅된 채로 넘겨준다"를 한 함수로 표현.
+
+---
+
+## R-048: self-injection으로 `@Transactional` 프록시 우회 호출
+
+- **카테고리**: spring-di
+- **도입 강**: [33강](../learning-log/step-33.md)
+- **적용 조건**: 같은 클래스 안에서 `@Transactional`이 붙은 다른 메서드를 호출해야 하는데, 그 호출이 `this.method()`(프록시를 거치지 않는 직접 호출)라서 트랜잭션이 적용 안 되는 경우
+
+### 패턴
+
+```kotlin
+class X(...) {
+    @Lazy
+    @Autowired
+    private lateinit var self: X
+
+    @Bean
+    fun runner(): ApplicationRunner = ApplicationRunner {
+        self.transactionalMethod()   // this가 아니라 self를 거쳐 호출 → 프록시를 통과 → 트랜잭션 적용됨
+    }
+
+    @Transactional
+    fun transactionalMethod() { ... }
+}
+```
+
+Spring의 `@Transactional`(및 대부분의 AOP 기능)은 프록시 객체를 통해 호출될 때만 동작한다. 같은 클래스 내부의 `this.method()` 호출은 프록시를 우회하므로 트랜잭션이 적용되지 않는다. 자기 자신을 필드로 주입받아(`self`) 그 프록시를 통해 호출하는 것이 잘 알려진 우회 패턴이다. `@Lazy`는 자기 자신을 주입받는 과정에서 생기는 순환참조 문제를 늦은 초기화로 피한다.
+
+### 주의사항
+
+- 이건 일반적인 의존성이 아니라 특수한 우회 목적이므로, 생성자 주입(21강 원칙)이 아니라 `lateinit var` + 필드 주입(`@Autowired`)을 그대로 유지한다.
+- 근본적으로는 "트랜잭션이 필요한 로직을 별도 클래스/빈으로 분리"하는 게 더 깔끔한 해결책이지만, 기존 구조를 유지하는 마이그레이션 단계에서는 이 패턴을 그대로 옮기는 것이 안전하다.
 
 ---
 
