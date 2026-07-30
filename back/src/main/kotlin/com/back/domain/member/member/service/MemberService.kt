@@ -6,7 +6,6 @@ import com.back.global.exception.ServiceException
 import com.back.global.rsData.RsData
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
-import java.util.Optional
 
 @Service
 class MemberService(
@@ -22,7 +21,7 @@ class MemberService(
         join(username, password, nickname, null)
 
     fun join(username: String, password: String?, nickname: String, profileImgUrl: String?): Member {
-        memberRepository.findByUsername(username).ifPresent {
+        memberRepository.findByUsername(username)?.let {
             throw ServiceException("409-1", "이미 존재하는 아이디입니다.")
         }
 
@@ -38,11 +37,11 @@ class MemberService(
             throw ServiceException("401-1", "비밀번호가 일치하지 않습니다.")
     }
 
-    fun findByUsername(username: String): Optional<Member> {
+    fun findByUsername(username: String): Member? {
         return memberRepository.findByUsername(username)
     }
 
-    fun findByApiKey(apiKey: String): Optional<Member> {
+    fun findByApiKey(apiKey: String): Member? {
         return memberRepository.findByApiKey(apiKey)
     }
 
@@ -54,26 +53,21 @@ class MemberService(
         return authTokenService.payload(accessToken)
     }
 
-    fun findById(id: Int): Optional<Member> {
-        return memberRepository.findById(id)
-    }
+    fun findById(id: Int): Member? = memberRepository.findById(id).orElse(null)
 
     fun findAll(): List<Member> {
         return memberRepository.findAll()
     }
 
-    fun modifyOrJoin(username: String, password: String?, nickname: String, profileImgUrl: String?): RsData<Member> {
-        var member = findByUsername(username).orElse(null)
-
-        if (member == null) {
-            member = join(username, password, nickname, profileImgUrl)
-            return RsData("201-1", "회원가입이 완료되었습니다.", member)
-        }
-
-        modify(member, nickname, profileImgUrl)
-
-        return RsData("200-1", "회원 정보가 수정되었습니다.", member)
-    }
+    fun modifyOrJoin(username: String, password: String?, nickname: String, profileImgUrl: String?): RsData<Member> =
+        findByUsername(username)
+            ?.let {
+                modify(it, nickname, profileImgUrl)
+                RsData("200-1", "회원 정보가 수정되었습니다.", it)
+            } ?: run {
+                val joined = join(username, password, nickname, profileImgUrl)
+                RsData("201-1", "회원가입이 완료되었습니다.", joined)
+            }
 
     private fun modify(member: Member, nickname: String, profileImgUrl: String?) {
         member.modify(nickname, profileImgUrl)

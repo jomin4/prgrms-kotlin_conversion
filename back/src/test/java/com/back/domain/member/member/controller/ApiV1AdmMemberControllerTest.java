@@ -88,7 +88,7 @@ public class ApiV1AdmMemberControllerTest {
                 )
                 .andDo(print());
 
-        Member member = memberService.findById(id).get();
+        Member member = memberService.findById(id);
 
         resultActions
                 .andExpect(handler().handlerType(ApiV1AdmMemberController.class))

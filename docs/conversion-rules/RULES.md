@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **51강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **56강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -75,6 +75,10 @@
 | [R-058](#r-058-전체-변환-완료-후-롬복-의존성-제거) | 전체 변환 완료 후 롬복 의존성 제거 | build-config | 48강 |
 | [R-059](#r-059-쓸데없는-타입-선언-제거-체크리스트) | 쓸데없는 타입 선언 제거 체크리스트 | language-idiom | 49강 |
 | [R-060](#r-060-직접-만든-확장-함수로-반복되는-변환-로직-추출) | 직접 만든 확장 함수로 반복되는 변환 로직 추출 | language-idiom | 51강 |
+| [R-061](#r-061-optionalt--t-nullable-타입으로-전환) | `Optional<T>` → `T?`(nullable 타입으로 전환) | language-idiom | 52강 |
+| [R-062](#r-062-getorthrow-확장-함수로-optionalget과-동일한-표현력-유지) | `getOrThrow()` 확장 함수로 `Optional.get()`과 동일한 표현력 유지 | language-idiom | 52강 |
+| [R-063](#r-063-jparepository-표준-메서드는-service-계층에서-nullable로-변환) | `JpaRepository` 표준 메서드는 Service 계층에서 nullable로 변환 | entity-dto | 55강 |
+| [R-064](#r-064-var-재할당-분기를-nullable-체이닝-표현식으로-재구성) | `var` 재할당 분기를 nullable 체이닝 표현식으로 재구성 | language-idiom | 53강 |
 
 ---
 
@@ -1638,6 +1642,114 @@ fun String.base64Decode(): String = Base64.UrlSafe.decode(this).decodeToString()
 ### 주의사항
 
 - 코틀린 표준 라이브러리의 최신 API(`kotlin.io.encoding.Base64` 등)가 아직 실험적(`@OptIn(...)` 필요)일 수 있다 — 안정화 이전 API를 프로덕션에 쓸지는 팀 정책에 따라 판단.
+
+---
+
+## R-061: `Optional<T>` → `T?`(nullable 타입으로 전환)
+
+- **카테고리**: language-idiom
+- **도입 강**: [52강](../learning-log/step-52.md)
+- **적용 조건**: 우리가 직접 정의한 메서드(Repository 커스텀 쿼리 메서드, 엔티티/서비스 메서드)가 자바 스타일로 `Optional<T>`를 반환하던 경우
+
+### 변환
+
+```diff
+-fun findFirstByOrderByIdDesc(): Optional<Post>
++fun findFirstByOrderByIdDesc(): Post?
+```
+
+코틀린은 null 안정성이 언어에 내장되어 있어서, `Optional`로 "값이 없을 수 있음"을 표현할 필요가 없다. nullable 타입(`T?`)이 그 역할을 그대로 대신하고, `?.`/`?:`/`?.let{}` 등 18강부터 익힌 도구를 그대로 쓸 수 있다.
+
+### 주의사항
+
+- 호출부의 `.get()`, `.orElse(null)`, `.orElseThrow{}`, `.ifPresent{}` 등 Optional 전용 메서드 호출을 전부 대응되는 nullable 처리로 바꿔야 한다(R-062~R-064 참고). 반환 타입만 바꾸고 호출부를 안 고치면 컴파일이 깨진다.
+- 아직 자바로 남은 호출부(테스트 등)가 있다면, 그 자바 코드의 `.get()` 호출도 제거해야 한다 — Kotlin에서 nullable 타입은 Java 쪽에서 그냥 플랫폼 타입으로 보이므로 `.get()` 자체가 없는 메서드 호출 에러가 된다.
+
+---
+
+## R-062: `getOrThrow()` 확장 함수로 `Optional.get()`과 동일한 표현력 유지
+
+- **카테고리**: language-idiom
+- **도입 강**: [52강](../learning-log/step-52.md)
+- **적용 조건**: `Optional<T>.get()`(없으면 `NoSuchElementException`)처럼 "값이 없으면 즉시 예외"를 기대하던 호출부를, `T?`로 바뀐 뒤에도 똑같이 간결하게 쓰고 싶을 때
+
+### 패턴 (51강에서 미리 준비해둔 확장 함수)
+
+```kotlin
+fun <T : Any> T?.getOrThrow(): T {
+    return this ?: throw NoSuchElementException()
+}
+```
+
+```diff
+-val post = postService.findById(id).get()
++val post = postService.findById(id).getOrThrow()
+```
+
+`Optional<T>.get()`과 동일하게 "없으면 `NoSuchElementException`"을 던지는 동작을, 아무 nullable 타입에나 붙일 수 있는 제네릭 확장 함수로 재현했다. 호출부 코드 변경을 최소화(메서드 이름만 `get()` → `getOrThrow()`)하면서 Optional을 걷어낼 수 있다.
+
+### 주의사항
+
+- 이 함수는 "존재해야 정상인데 없으면 버그"인 상황에만 쓴다. 실제로 없을 수 있는 정상 케이스라면 `?:`로 기본값을 주거나 `?.let{}`으로 분기하는 게 맞다(무분별하게 `getOrThrow()`로 덮지 말 것).
+
+---
+
+## R-063: `JpaRepository` 표준 메서드는 Service 계층에서 nullable로 변환
+
+- **카테고리**: entity-dto
+- **도입 강**: [55강](../learning-log/step-55.md)
+- **적용 조건**: `JpaRepository<T, ID>`가 기본 제공하는 `findById(id): Optional<T>` 같은 표준 메서드
+
+### 패턴
+
+```kotlin
+// Repository는 JPA 표준 그대로 Optional 유지 (직접 정의한 메서드가 아니라 바꿀 수 없음)
+interface MemberRepository : JpaRepository<Member, Int> { ... }
+
+// Service 계층에서 nullable로 변환
+fun findById(id: Int): Member? = memberRepository.findById(id).orElse(null)
+```
+
+Repository가 상속하는 `JpaRepository`의 `findById`는 Spring Data JPA 표준 인터페이스가 이미 `Optional<T>`로 고정해둔 메서드라 직접 바꿀 수 없다. Repository 계층은 JPA 표준을 그대로 따르고, **그 경계를 넘어오는 Service 계층에서** `.orElse(null)`로 변환해 그 이후로는 코틀린다운 nullable 타입만 다루게 한다.
+
+### 주의사항
+
+- 우리가 직접 정의한 커스텀 쿼리 메서드(`findByUsername`, `findFirstByOrderByIdDesc` 등)는 이 제약이 없으므로 Repository 인터페이스에서 바로 `T?`로 선언 가능(R-061).
+
+---
+
+## R-064: `var` 재할당 분기를 nullable 체이닝 표현식으로 재구성
+
+- **카테고리**: language-idiom
+- **도입 강**: [53강](../learning-log/step-53.md)
+- **적용 조건**: `Optional.orElse(null)`로 꺼낸 값을 `var`에 담고 `if (null) { 분기A } else { 분기B }`로 나누던 자바/코틀린 코드
+
+### 변환
+
+```diff
+-var member = findByUsername(username).orElse(null)
+-if (member == null) {
+-    member = join(username, password, nickname, profileImgUrl)
+-    return RsData("201-1", "회원가입이 완료되었습니다.", member)
+-}
+-modify(member, nickname, profileImgUrl)
+-return RsData("200-1", "회원 정보가 수정되었습니다.", member)
++fun modifyOrJoin(...): RsData<Member> =
++    findByUsername(username)
++        ?.let {
++            modify(it, nickname, profileImgUrl)
++            RsData("200-1", "회원 정보가 수정되었습니다.", it)
++        } ?: run {
++            val joined = join(username, password, nickname, profileImgUrl)
++            RsData("201-1", "회원가입이 완료되었습니다.", joined)
++        }
+```
+
+`?.let { 값이 있을 때 }`와 `?: run { 값이 없을 때 }`를 이어붙이면, `var` 재할당과 중간의 "아직 확정 안 된 상태" 없이 "있으면 이 표현식, 없으면 저 표현식" 전체를 함수 본문 하나의 단일 표현식으로 표현할 수 있다.
+
+### 주의사항
+
+- 분기 로직이 복잡해서 `?.let`/`run` 체이닝이 오히려 읽기 어려워진다면 억지로 한 표현식에 욱여넣지 말고 일반 `if`/`else`(그 안에서 `val`로 각각 처리)를 쓰는 게 낫다 — 가독성이 우선이다.
 
 ---
 

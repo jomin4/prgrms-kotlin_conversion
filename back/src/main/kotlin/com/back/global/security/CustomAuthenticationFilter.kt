@@ -94,7 +94,7 @@ class CustomAuthenticationFilter(
     private fun resolveMember(apiKey: String, accessToken: String): Pair<Member, Boolean> {
         memberFromAccessToken(accessToken)?.let { return it to true }
 
-        val member = memberService.findByApiKey(apiKey).orElse(null)
+        val member = memberService.findByApiKey(apiKey)
             ?: throw ServiceException("401-3", "API 키가 유효하지 않습니다.")
 
         return member to false
