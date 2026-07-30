@@ -6,7 +6,7 @@
 **적용 스코프 주의**: 여기 실린 규칙은 **아래 명시된 강(N강)까지 학습 완료된 것만** 포함합니다.
 에이전트에게 이 문서를 넘길 때는 반드시 "이 문서에 있는 규칙만 적용하고, 문서에 없는 패턴은 임의로 적용하지 말 것"을 지시하세요.
 
-- 현재 커버리지: **33강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
+- 현재 커버리지: **38강까지** (13강은 12강에서 선반영되어 규칙 추가 없음)
 - 상세 학습 과정/트러블슈팅은 `docs/learning-log/step-NN.md` 참고 (규칙 하나당 어느 강에서 나왔는지 링크됨)
 
 ---
@@ -63,6 +63,11 @@
 | [R-046](#r-046-예외-처리-로직에-없던-방어-코드-추가) | 인덱스/배열 접근에 없던 방어 코드 추가 (`getOrElse`/`getOrNull`) | design | 31강 |
 | [R-047](#r-047-filterisinstancet로-타입-필터링-압축) | `filterIsInstance<T>()`로 타입 필터링 압축 | language-idiom | 31강 |
 | [R-048](#r-048-self-injection으로-transactional-프록시-우회-호출) | self-injection으로 `@Transactional` 프록시 우회 호출 | spring-di | 33강 |
+| [R-049](#r-049-jpa-엔티티의-id를-주-생성자-파라미터로) | JPA 엔티티의 `id`를 주 생성자 파라미터로 | entity-dto | 34강 |
+| [R-050](#r-050-jpa-no-arg-생성자는-kotlinpluginjpa가-자동-생성) | JPA no-arg 생성자는 `kotlin("plugin.jpa")`가 자동 생성 | interop | 34강 |
+| [R-051](#r-051--참조-동일성-vs--구조적-동일성) | `===`(참조 동일성) vs `==`(구조적 동일성) | language-idiom | 34강 |
+| [R-052](#r-052-jpa-관계컬럼-어노테이션은-field-명시) | JPA 관계/컬럼 어노테이션은 `@field:` 명시 | interop | 35강 |
+| [R-053](#r-053-엔티티-불변-필드는-val-가변-필드는-var) | 엔티티 불변 필드는 `val`, 가변 필드는 `var` | entity-dto | 38강 |
 
 ---
 
@@ -1394,6 +1399,98 @@ Spring의 `@Transactional`(및 대부분의 AOP 기능)은 프록시 객체를 �
 
 - 이건 일반적인 의존성이 아니라 특수한 우회 목적이므로, 생성자 주입(21강 원칙)이 아니라 `lateinit var` + 필드 주입(`@Autowired`)을 그대로 유지한다.
 - 근본적으로는 "트랜잭션이 필요한 로직을 별도 클래스/빈으로 분리"하는 게 더 깔끔한 해결책이지만, 기존 구조를 유지하는 마이그레이션 단계에서는 이 패턴을 그대로 옮기는 것이 안전하다.
+
+---
+
+## R-049: JPA 엔티티의 `id`를 주 생성자 파라미터로
+
+- **카테고리**: entity-dto
+- **도입 강**: [34강](../learning-log/step-34.md)
+- **적용 조건**: `@Setter(AccessLevel.PROTECTED)` 등으로 자식 클래스에서만 설정 가능하게 해둔 공통 부모 엔티티(`BaseEntity`)의 `id` 필드
+
+### 변환
+
+```diff
+-@Setter(PROTECTED)
+-private int id;
+-// 자식: setId(id);
++abstract class BaseEntity(val id: Int = 0)
++// 자식: class Member(id: Int, ...) : BaseEntity(id)
+```
+
+`id`는 생성된 후 절대 재할당되지 않으므로, 부모 클래스의 주 생성자 파라미터(`val`)로 받고 자식 클래스가 `super(id)`로 넘긴다. 자바의 "protected 세터로 자식만 설정 가능"이라는 우회를, 코틀린은 "생성자로만 값을 줄 수 있고 이후 불변"이라는 더 강한 보장으로 대체한다.
+
+---
+
+## R-050: JPA no-arg 생성자는 `kotlin("plugin.jpa")`가 자동 생성
+
+- **카테고리**: interop
+- **도입 강**: [34강](../learning-log/step-34.md)
+- **적용 조건**: 자바에서 Lombok `@NoArgsConstructor`로 JPA용 기본 생성자를 만들어주던 `@Entity`/`@MappedSuperclass` 클래스
+
+### 내용
+
+코틀린 엔티티 클래스에는 `@NoArgsConstructor`에 대응하는 코드가 보이지 않지만, 8강에서 추가한 `kotlin("plugin.jpa")` 플러그인이 내부적으로 "no-arg 컴파일러 플러그인"을 포함하고 있어 `@Entity`/`@MappedSuperclass`가 붙은 클래스에 **보이지 않는 no-arg 생성자**를 자동으로 만들어준다. 애플리케이션 코드에서 직접 호출할 일은 없고, JPA(Hibernate)가 리플렉션으로 엔티티를 만들 때만 내부적으로 사용한다.
+
+### 주의사항
+
+- 별도 설정이 필요 없다 — `kotlin("plugin.jpa")`가 있는 프로젝트라면 `@Entity`/`@MappedSuperclass` 클래스는 신경 쓸 필요 없이 자동으로 처리된다.
+
+---
+
+## R-051: `===`(참조 동일성) vs `==`(구조적 동일성)
+
+- **카테고리**: language-idiom
+- **도입 강**: [34강](../learning-log/step-34.md)
+- **적용 조건**: 자바의 `==`(객체 비교 시 참조 동일성)를 코틀린으로 옮길 때
+
+### 변환
+
+```diff
+-if (o == this) return true;
++if (other === this) return true
+```
+
+자바의 `==`는 객체 타입에 대해 항상 참조 동일성(같은 메모리 주소)을 비교한다. 코틀린의 `==`는 내부적으로 `.equals()`를 호출하는 **구조적 동일성** 비교로 의미가 다르다. "진짜 같은 객체 인스턴스인가"를 확인하려면 `===`(참조 동일성)를 써야 한다.
+
+### 주의사항
+
+- 이 차이 때문에 `if (author != actor)`(코틀린)는 `if (!author.equals(actor))`(자바)와 동일하게 동작한다 — 코틀린의 `!=`도 `.equals()` 기반이므로 별도 캐스팅 없이 그대로 대응된다.
+
+---
+
+## R-052: JPA 관계/컬럼 어노테이션은 `@field:` 명시
+
+- **카테고리**: interop
+- **도입 강**: [35강](../learning-log/step-35.md)
+- **적용 조건**: `@Column`, `@ManyToOne`, `@OneToMany` 등 JPA 어노테이션을 코틀린 생성자 프로퍼티에 붙일 때
+
+### 변환
+
+```diff
+-@Column(unique = true) val username: String
++@field:Column(unique = true) val username: String
+```
+
+19강(R-030)의 Jackson 사례와 같은 원리 — JPA는 프로퍼티가 아니라 **필드**에 붙은 어노테이션을 인식하므로, 8강의 `-Xannotation-default-target=param-property` 옵션이 있어도 명시적으로 `@field:`를 붙이는 것이 안전하다.
+
+---
+
+## R-053: 엔티티 불변 필드는 `val`, 가변 필드는 `var`
+
+- **카테고리**: entity-dto
+- **도입 강**: [38강](../learning-log/step-38.md)
+- **적용 조건**: JPA 엔티티의 각 필드가 생성 후 재할당되는지 여부
+
+### 판단 기준
+
+```diff
+-@field:ManyToOne var author: Member,
++@field:ManyToOne val author: Member,   // 작성자는 절대 안 바뀜 → val
+ var title: String,                     // modify()로 실제로 바뀜 → var 유지
+```
+
+엔티티의 각 필드를 변환할 때, 그 필드가 `modify()` 같은 메서드로 실제로 재할당되는지 확인한다. 절대 안 바뀌는 필드(연관관계의 소유자, 생성 시점에 고정되는 값)는 `val`로 선언해 "이 필드는 절대 안 바뀐다"는 것을 타입 시스템으로 보장한다.
 
 ---
 
